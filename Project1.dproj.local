@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+  <Transactions>
+    <Transaction>2026.10.14 08:17:25.406,=C:\Users\Lenovo\Documents\Embarcadero\Studio\Projekte\Unit1.pas</Transaction>
+    <Transaction>2026.10.14 08:17:55.016,C:\Users\Lenovo\Downloads\Yutani-chaos\Unit1.pas=C:\Users\Lenovo\Documents\Embarcadero\Studio\Projekte\Unit1.pas</Transaction>
+    <Transaction>2026.10.14 08:17:55.016,C:\Users\Lenovo\Downloads\Yutani-chaos\Unit1.dfm=C:\Users\Lenovo\Documents\Embarcadero\Studio\Projekte\Unit1.dfm</Transaction>
+    <Transaction>2026.10.14 08:18:03.921,C:\Users\Lenovo\Downloads\Yutani-chaos\Project1.dproj=C:\Users\Lenovo\Documents\Embarcadero\Studio\Projekte\Project1.dproj</Transaction>
+    <Transaction>2026.10.14 08:21:33.388,=C:\Users\Lenovo\Downloads\Yutani-chaos\Unit2.pas</Transaction>
+    <Transaction>2026.10.14 08:26:10.194,C:\Users\Lenovo\Downloads\Yutani-chaos\Yutani.Chaos.Skia.pas=C:\Users\Lenovo\Downloads\Yutani-chaos\Unit2.pas</Transaction>
+  </Transactions>
+</BorlandProject>
