@@ -4,7 +4,9 @@ Yutani CHAOS Skia - Complete Holographic AI Operating System Interface Skia4delp
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LaMitaOne/Yutani.CHAOS)    
         
 <img width="299" height="280" alt="Unbenannt" src="https://github.com/user-attachments/assets/411e6bae-544c-4537-bd01-0b3ca14cf055" />
-        
+    
+https://github.com/user-attachments/assets/9e80b987-3fdb-4115-a56a-436368bf6348
+              
 A dynamic, real-time particle-based holographic AI face rendered entirely from scratch using Delphi and Skia4Delphi. Instead of standard UI controls, this module renders a 3D-projected particle system onto an off-screen Skia surface, encodes it, and pushes it directly to a borderless, click-through Windows layered window.
 
 Perfect for assistant overlays, sci-fi UIs, or just putting a cool holographic face on your desktop.
