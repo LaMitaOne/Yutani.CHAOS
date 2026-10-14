@@ -1,5 +1,5 @@
 # Yutani.CHAOS
-Yutani CHAOS Skia - Complete Holographic AI Operating System Interface Skia4delphi version v0.1
+Yutani CHAOS - Complete Holographic AI Operating System Interface Skia4delphi version v0.1
           
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LaMitaOne/Yutani.CHAOS)    
         
