@@ -45,3 +45,7 @@ Available Controls in the Demo:
      Start / Stop: Triggers the build-up animation (Start) and the physics tear-down fade (Stop).
      Mouth Buttons: Closed, Min, Mid, Full (to change facial expressions).
      Eye Buttons: Open, Mid, Closed (to manually override eye states).
+
+
+Part of Yutani Engine https://github.com/LaMitaOne/Yutani-Building-better-worlds      
+    
