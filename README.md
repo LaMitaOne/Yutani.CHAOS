@@ -18,6 +18,9 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
 - **Ready for AI & Agent Integration (Roadmap):** Built around target-coordinate particle morphing (`tx, ty, tz`), allowing LLMs / AI agents via API/MCP to not only animate facial expressions and emotions, but also **draw pointers, shapes, and visual highlights directly on the user's desktop**.
       
 ---      
+> **Note:** Currently running without a control form – my eyes are burning and I need to take a screen break after wrangling this compute shader pipeline into working (which took quite a battle :D). Controls are coming soon! (or make them yourself :P)
+
+          
       
 ## ⚡ Real-World Performance Benchmarks      
       
