@@ -32,7 +32,7 @@ Tested at 30–40 FPS in transparent desktop overlay mode:
       
 -------------------------------------------------------------------------------------------------------------
 
-Yutani CHAOS - Complete Holographic AI Operating System Interface Skia4delphi CPU version v0.1
+Yutani CHAOS - Complete Holographic AI Operating System Interface Skia4delphi VCL CPU version v0.1
         
 <img width="299" height="280" alt="Unbenannt" src="https://github.com/user-attachments/assets/411e6bae-544c-4537-bd01-0b3ca14cf055" />
     
