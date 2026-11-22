@@ -1,0 +1,39 @@
+================================================================================
+3D MODEL CREDITS & LICENSES (Included Sample Meshes)
+================================================================================
+All 3D models bundled with this project for testing/demonstration purposes are
+licensed under Creative Commons Attribution licenses by their respective creators
+on Sketchfab.
+
+--------------------------------------------------------------------------------
+1. Angelica
+--------------------------------------------------------------------------------
+- Author:  DarkNik
+- Source:  https://sketchfab.com/3d-models/angelica-27f75fa94c384000bb6a79a3000f8e80
+- License: CC Attribution 4.0 International (CC BY 4.0)
+           https://creativecommons.org/licenses/by/4.0/
+- Changes: Converted/loaded dynamically into GPU particle coordinates at runtime;
+           inner eye/mouth submeshes and hair strands filtered out for holographic
+           visualization.
+
+--------------------------------------------------------------------------------
+2. Procedural female scifi armor test 3
+--------------------------------------------------------------------------------
+- Author:  ghostnoface
+- Source:  https://sketchfab.com/3d-models/procedural-female-scifi-armor-test-3-e33f00774f4e40f0b11418854be69a87
+- License: CC Attribution 4.0 International (CC BY 4.0)
+           https://creativecommons.org/licenses/by/4.0/
+- Changes: Converted/loaded dynamically into GPU particle coordinates at runtime.
+
+--------------------------------------------------------------------------------
+3. Scifi Girl v.01
+--------------------------------------------------------------------------------
+- Author:  patrix
+- Source:  https://sketchfab.com/3d-models/scifi-girl-v01-96340701c2ed4d37851c7d9109eee9c0
+- License: CC Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
+           https://creativecommons.org/licenses/by-nc-sa/4.0/
+- Changes: Converted/loaded dynamically into GPU particle coordinates at runtime.
+- Note:    Because this model is licensed under CC BY-NC-SA 4.0, any redistribution
+           of this specific model asset must remain non-commercial and retain the
+           same CC BY-NC-SA 4.0 license terms.
+================================================================================
