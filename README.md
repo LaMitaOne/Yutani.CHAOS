@@ -13,7 +13,8 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
       
 ---
 https://github.com/user-attachments/assets/334296a3-af78-49e6-afdd-ef5be7555137
-
+      
+Sample Video: https://youtu.be/Qf8PRYuqDEg      
 
      
 ## ✨ Key Features  
