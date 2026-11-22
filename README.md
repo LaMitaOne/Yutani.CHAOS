@@ -1,41 +1,76 @@
-# Yutani C.H.A.O.S. – GPU Edition (`Yutani.Chaos.Skia.GPU`)      
+# Yutani C.H.A.O.S. – GPU Edition  
+**Complete Holographic AI Operating System**  
+     
+**An ultra-lightweight, GPU-accelerated 3D holographic AI desktop overlay written in Delphi (FireMonkey + Skia4Delphi + OpenGL 4.3 Compute Shaders).**  
+     
+Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs natively on Windows with virtually zero system overhead—making it ideal as an **always-on AI companion** and **interactive visual desktop canvas**.  
+     
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LaMitaOne/Yutani.CHAOS)  
+       
+<img width="821" height="33" alt="Unbenannt" src="https://github.com/user-attachments/assets/ca98dbe8-8cc6-4080-a9e2-919dff901072" />
+         
+<img width="482" height="372" alt="Unbenannt" src="https://github.com/user-attachments/assets/e6797fc1-912d-4f6e-925f-0cbb897d06f9" />
       
-**An ultra-lightweight, GPU-accelerated holographic AI desktop overlay written in Delphi (FireMonkey + Skia4Delphi + OpenGL 4.3 Compute Shaders).**      
-      
-Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs natively on Windows with virtually zero system overhead—making it ideal as an **always-on AI companion** and **interactive visual desktop canvas**.      
-          
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LaMitaOne/Yutani.CHAOS)    
-              
-<img width="820" height="37" alt="Unbenannt" src="https://github.com/user-attachments/assets/6b3cf114-39bd-4c55-884c-c1889f257319" />      
-<img width="296" height="328" alt="face" src="https://github.com/user-attachments/assets/af9a758e-5b7a-412f-bd7d-1275aeb0b713" />
-             
-## ✨ Key Features      
-      
-- **100% GPU Particle Simulation & Splatting:** Spring-damper physics, 3D perspective projection, depth-based volumetric shading, and soft radial glow splatting executed directly inside OpenGL 4.3 Compute Shaders (`SSBO` + coherent `imageLoad`/`imageStore`).
-- **True Per-Pixel Desktop Transparency:** Renders premultiplied-alpha frames directly onto a borderless, transparent, click-through FireMonkey layered window—floating freely over any application or desktop wallpaper.
-- **Ultra-Low Resource Footprint:** Designed for continuous background operation without spinning up fans or impacting gaming/AI workloads.
-- **Full Lifecycle Animations:** Includes holographic scanline build-up (formation), organic idle hover, and gravity-driven tear-down (despawn) effects.
-- **Ready for AI & Agent Integration (Roadmap):** Built around target-coordinate particle morphing (`tx, ty, tz`), allowing LLMs / AI agents via API/MCP to not only animate facial expressions and emotions, but also **draw pointers, shapes, and visual highlights directly on the user's desktop**.
-      
----      
-> **Note:** Currently running without a control form – my eyes are burning and I need to take a screen break after wrangling this compute shader pipeline into working (which took quite a battle :D). Controls are coming soon! (or make them yourself :P)
-
-          
-      
-## ⚡ Real-World Performance Benchmarks      
-      
-Tested at 30–40 FPS in transparent desktop overlay mode:
-      
-| Hardware Setup | CPU Usage | GPU Usage | Notes |
-| :--- | :---: | :---: | :--- |
-| **AMD Ryzen 5 4500U** (Vega 6 iGPU) | ~4.5 % | **1.3 % – 1.7 %** | Thin & light laptop, silent / no fan spin-up |
-| **AMD Ryzen 7 5800X + RTX 2060 Super** | ~3.0 % | **~1.5 % avg** | GPU stays at idle clock states |
-      
-*(Note: Adaptive idle FPS scaling can drop usage even further when no active speech or drawing is happening. todo...)*
-      
+---
+     
+## ✨ Key Features  
+     
+- **100% GPU Particle Simulation & Splatting:** Spring-damper physics, 3D perspective projection, normal-based rim lighting, volumetric depth shading, and soft radial glow splatting executed directly inside OpenGL 4.3 Compute Shaders (`SSBO` + coherent `imageLoad`/`imageStore`).  
+- **Zero-Dependency 3D Mesh Loader (`.glb` & `.obj`):** Parses binary glTF 2.0 scene hierarchies (`nodes` + `TRS`/`matrix` transforms), extracts normals, supports mesh/keyword filtering, body-part classification, and glTF morph targets / vertex-frame animations.  
+- **Anatomical Neck-Pivot Mouse Tracking:** Smoothly tracks the global cursor position (`GetCursorPos`) with spring-damped inertia and a `smoothstep` neck pivot—turning and nodding the head naturally while keeping the shoulders steady.  
+- **Switchable Hologram Styles:** Live switching between **Classic**, **Cyber** (accent rim-lighting), **Volumetric** (optional pulsating inner brain-core), and **Photo** modes.  
+- **True Per-Pixel Desktop Transparency:** Renders premultiplied-alpha frames via zero-copy PBO readback onto a borderless, transparent, click-through (`WS_EX_TRANSPARENT`) FireMonkey layered window with optional `StayOnTop` toggle.  
+- **Full Lifecycle Scanline Animations:** Includes holographic top-to-bottom build-up (`Spawn`), organic idle hover, and gravity-driven tear-down (`Despawn` + graceful `QuitAfterDespawn` on exit).  
+- **Tabbed Runtime Control Panel & Native System Tray:** Features a compact, HD-screen-friendly tabbed cockpit (`uControls`) and a dependency-free Win32 `Shell_NotifyIconW` system tray menu (`uAppTray`) for quick style switching, spawn/despawn, and window toggles.  
+- **Adaptive Idle-FPS Pacing:** Automatically runs at high frame rates during speech, morphing, or animation (`ActiveTargetFPS`) and throttles down after a configurable silence timeout (`IdleTargetFPS`) to keep laptop fans silent.  
+- **Ready for AI & Agent Integration (Roadmap):** Built around target-coordinate particle morphing (`tx, ty, tz`), allowing LLMs / AI agents via API/MCP to control expressions, look in a "mirror" (`look_in_mirror`), and **draw pointers, shapes, and visual highlights directly on the user's desktop**.  
+     
+---     
+     
+## 🚧 Work in Progress / Experimental  
+     
+- **`Yutani.PhotoTo3D` & Full-Body Meshes:** Implemented in code (`PNG`/`JPG` luma-to-depth + Sobel normal estimation and hybrid stitching), currently untested in live production.  
+- **Holo-Shader Facial Controls:** `Mouth Open`, `Eye Openness`, `Chaos Level`, and `Trail Persistence` sliders are wired in the UI (`Face / Animation` tab) but not yet connected inside the `HOLO_PARTICLE_SRC` mesh shader (currently active in the legacy depth-map shader).  
+- **LLM / MCP Bridge:** Planned next step for autonomous AI expression, shape projection, and self-reflection.  
+     
+---     
+     
+## ⚡ Real-World Performance Benchmarks  
+     
+Tested in transparent desktop overlay mode on Windows:  
+     
+| Hardware Setup | Mode / FPS | CPU Usage | GPU Usage | Notes |
+| :--- | :---: | :---: | :---: | :--- |
+| **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (~38 FPS) | **~2.5 % – 4.5 %** | **~1.4 % – 2.5 %** | Thin & light laptop, completely silent / no fan spin-up |
+| **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (120 FPS) | ~25 % | ~17 % | High-refresh stress test over transparent desktop |
+| **AMD Ryzen 7 5800X + RTX 2060 Super** | 30–40 FPS | ~3.0 % | **~1.5 % avg** | GPU stays at idle clock states |
+     
+---     
+     
+## 🧩 Project Architecture  
+     
+- `Yutani.Chaos.Skia.GPU.pas` — Offscreen OpenGL 4.3 context, compute shaders (`PARTICLE_SRC`, `HOLO_PARTICLE_SRC`, `CLEAR_SRC`, `BLUR_SRC`), dual-PBO readback, and `TSkChaos` component.  
+- `Yutani.MeshLoader.pas` — Zero-dependency `.glb` (glTF 2.0) and `.obj` parser with scene-graph transforms, normal calculation, and blend-shape support.  
+- `Yutani.PhotoTo3D.pas` — Experimental 2D portrait-to-3D point-cloud pipeline with Sobel depth-gradient normals.  
+- `uSkiaCustomThreadedBase.pas` — High-precision QPC background render thread with hybrid `Sleep`/spin-wait pacing, `RealFPS` counter, and Adaptive Idle-FPS controller.  
+- `uControls.pas` — Runtime-generated tabbed control form (`Appearance / Shader`, `Mesh & Sources`, `Face / Animation`, `System / Performance`).  
+- `uAppTray.pas` — Standalone Win32 notification-area icon and popup menu wrapper for FireMonkey.  
+- `Unit1.pas` — Transparent, click-through desktop host window.  
+     
+---
+     
+## 📜 3D Asset Credits  
+     
+Demo `.glb` models tested with this project (see `MODEL_CREDITS.txt` for full Creative Commons license details):  
+- **Angelica** by *DarkNik* (CC BY 4.0)  
+- **Procedural female scifi armor test 3** by *ghostnoface* (CC BY 4.0)  
+- **Scifi Girl v.01** by *patrix* (CC BY-NC-SA 4.0)  
+     
+           
 -------------------------------------------------------------------------------------------------------------
-
-Yutani CHAOS - Complete Holographic AI Operating System Interface Skia4delphi VCL CPU version v0.1
+     
+     
+**Yutani CHAOS - Complete Holographic AI Operating System Interface Skia4delphi VCL CPU version v0.1**
         
 <img width="299" height="280" alt="Unbenannt" src="https://github.com/user-attachments/assets/411e6bae-544c-4537-bd01-0b3ca14cf055" />
     
