@@ -1,0 +1,14 @@
+object Form2: TForm2
+  Left = 0
+  Top = 0
+  Caption = 'Yutani Chaos - Controls'
+  ClientHeight = 500
+  ClientWidth = 640
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  OnCreate = FormCreate
+  OnClose = FormClose
+  OnDestroy = FormDestroy
+  DesignerMasterStyle = 0
+end

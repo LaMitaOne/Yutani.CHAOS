@@ -10,7 +10,7 @@
   - Double Buffering: Renders to offscreen surfaces to prevent flickering.
   - Precise Frame Pacing: QPC-based absolute frame deadlines with a hybrid
     Sleep/SpinWait strategy. The actual render time is automatically
-    subtracted, so high target FPS values (144+) are really reached.
+    subtracted, so high target FPS values (144+) are reached.
   - RealFPS Monitoring: Measures the actual frames shown on screen per
     second, independent of the configured TargetFPS. Perfect for comparing
     against other renderers (e.g. Raylib).
@@ -19,21 +19,6 @@
 { by Lara Miriam Tamy Reschke                                                  }
 {                                                                              }
 {------------------------------------------------------------------------------}
-{
-  Latest Changes:
-   v 1.0:
-   - Never had any problem in 9 months with that base at all so its time to get 1.0
-   v 0.4:
-   - Added RealFPS monitoring (measures actual UI presentation rate).
-   - Frame counter based on TStopwatch (QPC), updated inside Draw().
-   v 0.3:
-   - QPC absolute-deadline frame pacing (render time is subtracted).
-   - Hybrid Sleep/SpinWait + timeBeginPeriod(1) on Windows
-   - DeltaTime now uses QPC
-   - StopThread: real WaitFor instead of the old Sleep(100)
-   v 0.2:
-   - Implemented Doublebuffering logic.
-}
 
 unit uSkiaCustomThreadedBase;
 
@@ -67,10 +52,10 @@ type
   { TSkiaCustomThreadedBase
     High-performance, thread-rendered FMX Skia component with Double Buffering.
 
-    Changes from standard:
-    1. Rendering happens in the background thread (CPU Raster).
-    2. The Main Thread only displays the pre-rendered image (Snapshot).
-    3. RealFPS tracks how many snapshots actually reach the screen per second.
+    Architecture:
+    1. Rendering happens in the background thread (CPU raster).
+    2. The main thread only displays the pre-rendered image (snapshot).
+    3. RealFPS tracks how many snapshots reach the screen per second.
   }
   TSkiaCustomThreadedBase = class(TSkCustomControl)
   private
@@ -98,9 +83,32 @@ type
     FDemoVelocity: TPointF;
     FAngle: Single;
 
+    { Adaptive Idle-FPS State }
+    { When AdaptiveFPS is enabled the render thread paces at ActiveTargetFPS
+      while the scene is busy (speech, morph, animation) and drops to
+      IdleTargetFPS after IdleTimeoutSec seconds of silence, saving GPU/CPU
+      on a quiet desktop overlay. NotifyActivity resets the idle timer. }
+    FAdaptiveFPS: Boolean;
+    FActiveTargetFPS: Integer;
+    FIdleTargetFPS: Integer;
+    FIdleTimeoutSec: Double;
+    FLastActivityTicks: Int64;
+    FIdleActive: Boolean;
+
     { Setters }
     procedure SetActive(const Value: Boolean);
     procedure SetTargetFPS(const Value: Integer);
+    procedure SetAdaptiveFPS(const Value: Boolean);
+    procedure SetActiveTargetFPS(const Value: Integer);
+    procedure SetIdleTargetFPS(const Value: Integer);
+    procedure SetIdleTimeoutSec(const Value: Double);
+    { Recomputes the effective TargetFPS from the current adaptive state and
+      applies it to the field the frame loop reads. No-op when adaptive is off. }
+    procedure ApplyAdaptiveFPS;
+    { Called every frame from UpdateLogic to switch to the idle rate once
+      the silence timeout has elapsed. }
+    procedure CheckAdaptiveIdle;
+    function GetIdleMode: Boolean;
 
     { Internal Thread Methods }
     procedure ThreadSafeInvalidate;
@@ -123,6 +131,12 @@ type
       Use this to compare effective throughput against TargetFPS or other
       renderers (Raylib, MultiThreaded variant, etc.). }
     property RealFPS: Integer read FRealFPS;
+    { Marks the scene as busy and resets the adaptive idle timer. Descendants
+      call this from mouth / eye / emotion / morph-target setters so the frame
+      rate stays high while the avatar is speaking or animating. }
+    procedure NotifyActivity;
+    { True while the adaptive controller is pacing at the idle rate. }
+    property IdleMode: Boolean read GetIdleMode;
   published
     property Align;
     property HitTest default True;
@@ -133,6 +147,15 @@ type
     { Component Properties }
     property Active: Boolean read FActive write SetActive default False;
     property TargetFPS: Integer read FTargetFPS write SetTargetFPS default 40;
+    { Enables adaptive frame pacing: ActiveTargetFPS while busy, IdleTargetFPS
+      after IdleTimeoutSec seconds without activity. }
+    property AdaptiveFPS: Boolean read FAdaptiveFPS write SetAdaptiveFPS default False;
+    { Frame rate used while the scene is active (speech / animation / morph). }
+    property ActiveTargetFPS: Integer read FActiveTargetFPS write SetActiveTargetFPS default 40;
+    { Frame rate used after the idle timeout elapses (quiet desktop overlay). }
+    property IdleTargetFPS: Integer read FIdleTargetFPS write SetIdleTargetFPS default 15;
+    { Seconds of inactivity before dropping from ActiveTargetFPS to IdleTargetFPS. }
+    property IdleTimeoutSec: Double read FIdleTimeoutSec write SetIdleTimeoutSec;
   end;
 
 implementation
@@ -196,6 +219,16 @@ begin
   FLastFpsTime := 0;
   FRealFPS := 0;
 
+  { Adaptive Idle-FPS defaults: 40 FPS while busy, 15 FPS when idle,
+    three seconds of silence before throttling down. Disabled by default so
+    plain TargetFPS behaviour is unchanged until a component opts in. }
+  FAdaptiveFPS := False;
+  FActiveTargetFPS := 40;
+  FIdleTargetFPS := 15;
+  FIdleTimeoutSec := 3.0;
+  FIdleActive := True;
+  FLastActivityTicks := TStopwatch.GetTimestamp;
+
   SetBounds(0, 0, 300, 200);
   HitTest := True;
   // Demo Mode Init
@@ -214,8 +247,7 @@ end;
 procedure TSkiaCustomThreadedBase.Resize;
 begin
   inherited;
-  // Optional: If we resized, the thread needs to know to create a new sized surface.
-  // Our thread logic handles this by checking Width/Height every frame.
+  // The thread checks Width/Height every frame and rebuilds its surface on resize.
 end;
 
 procedure TSkiaCustomThreadedBase.StartThread;
@@ -235,7 +267,7 @@ begin
       TargetRect: TRectF;
     begin
       {$IFDEF MSWINDOWS}
-      // Critical on Windows: without this, Sleep(1) actually sleeps ~15.6ms
+      // Critical on Windows: without this, Sleep(1) sleeps ~15.6ms
       // and any target FPS above ~60 is impossible to reach.
       timeBeginPeriod(1);
       {$ENDIF}
@@ -243,7 +275,7 @@ begin
         Timer.Init;
         Freq := Timer.Frequency;
         if Freq <= 0 then
-          Freq := 10000000; // fallback: default QPC frequency (10 MHz)
+          Freq := 10000000; // default QPC frequency (10 MHz) when unavailable
 
         NowTicks := Timer.GetTicks;
         LastFrameTicks := NowTicks;
@@ -307,15 +339,15 @@ begin
           if FTargetFPS > 0 then
             FrameTicks := Round(Freq / FTargetFPS)
           else
-            FrameTicks := Freq div 60; // TargetFPS = 0: fall back to 60
+            FrameTicks := Freq div 60; // TargetFPS = 0: default to 60 FPS
 
           NextFrame := NextFrame + FrameTicks;
 
-          // Drift / Desync Correction:
-          // If NextFrame is in the past (e.g. UI was blocked by Trackbar drag
-          // or debugger pause), we immediately reset it to NOW.
-          // This ensures we never rush a burst of frames and always wait
-          // exactly 1 frame interval before the next render.
+          // Drift / desync correction:
+          // If NextFrame is in the past (e.g. UI blocked by a trackbar drag
+          // or a debugger pause), reset it to NOW immediately.
+          // This prevents a burst of catch-up frames and keeps exactly one
+          // frame interval before the next render.
           NowTicks := Timer.GetTicks;
           if NextFrame <= NowTicks then
             NextFrame := NowTicks + FrameTicks;
@@ -340,8 +372,8 @@ begin
   if not Assigned(FThread) then Exit;
 
   FThread.Terminate;
-  // Real wait instead of the old Sleep(100): the loop checks
-  // CheckTerminated at least once per frame, so this returns quickly.
+  // Wait for the render thread to finish: the loop checks CheckTerminated
+  // at least once per frame, so this returns quickly.
   // Safe here: TThread.Queue is non-blocking, and WaitFor called from
   // the main thread pumps queued calls - no deadlock.
   FThread.WaitFor;
@@ -395,19 +427,22 @@ begin
   end
   else
   begin
-    // Fallback if thread hasn't started yet
-    ACanvas.Clear(TAlphaColors.Black);
+    // If the thread has not started yet, clear to transparent (not black)
+    // so a transparent desktop-pet window does not flash.
+    ACanvas.Clear($00000000);
   end;
 end;
 
 {------------------------------------------------------------------------------
-  DEMO MODE (Built-in visualization - Runs in Thread now!)
+  DEMO MODE - built-in visualization that runs in the render thread.
 ------------------------------------------------------------------------------}
 
 procedure TSkiaCustomThreadedBase.UpdateLogic(const DeltaTime: Double);
 var
   NewLeft, NewTop: Single;
 begin
+  // Drop to the idle frame rate once the scene is quiet long enough.
+  CheckAdaptiveIdle;
   // 1. Move Rectangle
   FDemoRect.Offset(FDemoVelocity.X * DeltaTime, FDemoVelocity.Y * DeltaTime);
   NewLeft := FDemoRect.Left;
@@ -515,6 +550,106 @@ procedure TSkiaCustomThreadedBase.SetTargetFPS(const Value: Integer);
 begin
   if FTargetFPS <> Value then
     FTargetFPS := Value;
+end;
+
+{==============================================================================
+  Adaptive Idle-FPS
+==============================================================================}
+
+procedure TSkiaCustomThreadedBase.ApplyAdaptiveFPS;
+begin
+  { Pick the rate the frame loop should pace to based on whether the scene
+    is currently considered active or idle. Touches only FTargetFPS, which is
+    the value the existing pacing math reads, so the loop itself is unchanged. }
+  if FIdleActive then
+    FTargetFPS := FActiveTargetFPS
+  else
+    FTargetFPS := FIdleTargetFPS;
+end;
+
+procedure TSkiaCustomThreadedBase.SetAdaptiveFPS(const Value: Boolean);
+begin
+  if FAdaptiveFPS <> Value then
+  begin
+    FAdaptiveFPS := Value;
+    if FAdaptiveFPS then
+    begin
+      { Entering adaptive mode: start in the active band and let the idle
+        timer demote us when the scene goes quiet. }
+      FIdleActive := True;
+      FLastActivityTicks := TStopwatch.GetTimestamp;
+      ApplyAdaptiveFPS;
+    end
+    else
+      { Leaving adaptive mode: restore the active rate as a steady pace. }
+      FTargetFPS := FActiveTargetFPS;
+  end;
+end;
+
+procedure TSkiaCustomThreadedBase.SetActiveTargetFPS(const Value: Integer);
+begin
+  if Value < 1 then
+    Exit;
+  if FActiveTargetFPS <> Value then
+  begin
+    FActiveTargetFPS := Value;
+    if FAdaptiveFPS and FIdleActive then
+      FTargetFPS := FActiveTargetFPS;
+  end;
+end;
+
+procedure TSkiaCustomThreadedBase.SetIdleTargetFPS(const Value: Integer);
+begin
+  if Value < 1 then
+    Exit;
+  if FIdleTargetFPS <> Value then
+  begin
+    FIdleTargetFPS := Value;
+    if FAdaptiveFPS and not FIdleActive then
+      FTargetFPS := FIdleTargetFPS;
+  end;
+end;
+
+procedure TSkiaCustomThreadedBase.SetIdleTimeoutSec(const Value: Double);
+begin
+  if Value < 0 then
+    FIdleTimeoutSec := 0
+  else
+    FIdleTimeoutSec := Value;
+end;
+
+procedure TSkiaCustomThreadedBase.NotifyActivity;
+begin
+  { Any animation, speech or morph-target change routes through here so the
+    adaptive controller can keep the frame rate in the active band. }
+  FLastActivityTicks := TStopwatch.GetTimestamp;
+  if FAdaptiveFPS and not FIdleActive then
+  begin
+    FIdleActive := True;
+    FTargetFPS := FActiveTargetFPS;
+  end;
+end;
+
+procedure TSkiaCustomThreadedBase.CheckAdaptiveIdle;
+var
+  ElapsedSec: Double;
+begin
+  if not FAdaptiveFPS then
+    Exit;
+  if not FIdleActive then
+    Exit;
+  ElapsedSec := (TStopwatch.GetTimestamp - FLastActivityTicks) / TStopwatch.Frequency;
+  if ElapsedSec >= FIdleTimeoutSec then
+  begin
+    FIdleActive := False;
+    FTargetFPS := FIdleTargetFPS;
+  end;
+end;
+
+function TSkiaCustomThreadedBase.GetIdleMode: Boolean;
+begin
+  { Exposed for diagnostics: True while pacing at the reduced idle rate. }
+  Result := FAdaptiveFPS and not FIdleActive;
 end;
 
 end.
