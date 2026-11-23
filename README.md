@@ -124,8 +124,9 @@ tracking** (`TVideoGrabber`), an experimental **neural network brain** powered b
 and an `instincts` module—all running natively on Windows (and its original 2009 Win32 binary still runs on Windows 11 today).     
         
 Seventeen years later, **Yutani C.H.A.O.S.** brings that exact same vision into the modern era with 100% GPU-accelerated        
-OpenGL 4.3 Compute Shaders, 3D holographic point clouds, and modern LLM/MCP agent integration.       
-
+OpenGL 4.3 Compute Shaders, 3D holographic point clouds, and modern LLM/MCP agent integration.     
+*(That 2009 prototype used "Homer" as its avatar, so I'm probably not even allowed to post a screenshot of it :P)*
+       
 -------------------------------------------------------------------------------------------------------------
      
      
