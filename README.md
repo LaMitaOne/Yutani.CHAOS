@@ -1,4 +1,4 @@
-# Yutani C.H.A.O.S. – GPU Edition  
+# Yutani C.H.A.O.S. – GPU Edition  v0.4
 **Complete Holographic AI Operating System**  
      
 **An ultra-lightweight, GPU-accelerated 3D holographic AI desktop overlay written in Delphi (FireMonkey + Skia4Delphi + OpenGL 4.3 Compute Shaders).**  
