@@ -14,8 +14,14 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
 Sample Video v0.4: https://youtu.be/sGEjN7L1UJA       
 ---
 
-<img width="269" height="276" alt="6" src="https://github.com/user-attachments/assets/eaac83db-ad01-4319-b007-87f8680cc236" />
+ 
 <img width="223" height="246" alt="5" src="https://github.com/user-attachments/assets/32855814-4f17-49eb-87bb-89a0c23e4d1c" />
+      
+With this head for example: **27.7 MB RAM total** in Task Manager (using [Anime Head Base Mesh](https://sketchfab.com/3d-models/anime-head-base-mesh-58e291934379438584012d09faefedf6) by MarFab)
+    
+     
+<img width="801" height="31" alt="Unbenannt" src="https://github.com/user-attachments/assets/4f6be3cb-3310-4d7e-abf7-0620fb540919" />  
+<img width="269" height="276" alt="6" src="https://github.com/user-attachments/assets/eaac83db-ad01-4319-b007-87f8680cc236" />
 <img width="271" height="196" alt="4" src="https://github.com/user-attachments/assets/8aa2b22d-162b-4153-9fda-4e1674daa602" />
 <img width="232" height="246" alt="3" src="https://github.com/user-attachments/assets/1220901b-aa54-4c08-a20c-abe9bde5d7e9" />
 <img width="204" height="242" alt="2" src="https://github.com/user-attachments/assets/e9ab4dc1-cbe2-4545-b0cc-a4955bae6757" />
