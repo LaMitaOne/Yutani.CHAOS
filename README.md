@@ -126,8 +126,17 @@ and an `instincts` module—all running natively on Windows (and its original 20
 Seventeen years later, **Yutani C.H.A.O.S.** brings that exact same vision into the modern era with 100% GPU-accelerated        
 OpenGL 4.3 Compute Shaders, 3D holographic point clouds, and modern LLM/MCP agent integration.     
 *(That 2009 prototype used "Homer" as its avatar, so I'm probably not even allowed to post a screenshot of it :P)*
-       
+      
+<img width="371" height="201" alt="Unbenannt" src="https://github.com/user-attachments/assets/4cd6a3a4-91ee-4fdb-9880-a9673669f222" />
+
+
+
+
+
+            
 -------------------------------------------------------------------------------------------------------------
+
+
      
      
 **Yutani CHAOS - Complete Holographic AI Operating System Interface Skia4delphi VCL CPU version v0.1**
