@@ -113,9 +113,19 @@ Bundled demo `.glb` models tested with this project (see `MODEL_CREDITS.txt` for
 - **Angelica** by *DarkNik* (CC BY 4.0)  
 - **Procedural female scifi armor test 3** by *ghostnoface* (CC BY 4.0)  
 - **Scifi Girl v.01** by *patrix* (CC BY-NC-SA 4.0)
+    
+       
+## 🕰️ Origin Story (2009 ➡️ 2026)      
+      
+The vision behind **Yutani C.H.A.O.S.** dates all the way back to **October 2009**, when I built an early multimodal     
+AI desktop companion in **Delphi (VCL)**. Even back then, it combined cursor-tracking eyes,      
+**SAPI 5.1 continuous speech recognition** with wake-word detection, **Text-to-Speech**, **webcam 2D motion     
+tracking** (`TVideoGrabber`), an experimental **neural network brain** powered by `FANN` (`fannfixed.dll`),     
+and an `instincts` module—all running natively on Windows (and its original 2009 Win32 binary still runs on Windows 11 today).     
+        
+Seventeen years later, **Yutani C.H.A.O.S.** brings that exact same vision into the modern era with 100% GPU-accelerated        
+OpenGL 4.3 Compute Shaders, 3D holographic point clouds, and modern LLM/MCP agent integration.       
 
-     
-           
 -------------------------------------------------------------------------------------------------------------
      
      
