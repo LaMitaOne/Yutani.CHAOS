@@ -118,7 +118,7 @@ Bundled demo `.glb` models tested with this project (see `MODEL_CREDITS.txt` for
 ## 🕰️ Origin Story (2009 ➡️ 2026)      
       
 The vision behind **Yutani C.H.A.O.S.** dates all the way back to **October 2009**, when I built an early multimodal     
-AI desktop companion in **Delphi (VCL)**. Even back then, it combined cursor-tracking eyes,      
+AI desktop companion in **Delphi 7 (VCL)**. Even back then, it combined cursor-tracking eyes,      
 **SAPI 5.1 continuous speech recognition** with wake-word detection, **Text-to-Speech**, **webcam 2D motion     
 tracking** (`TVideoGrabber`), an experimental **neural network brain** powered by `FANN` (`fannfixed.dll`),     
 and an `instincts` module—all running natively on Windows (and its original 2009 Win32 binary still runs on Windows 11 today).     
