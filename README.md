@@ -12,10 +12,6 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
 <img width="482" height="372" alt="Unbenannt" src="https://github.com/user-attachments/assets/e6797fc1-912d-4f6e-925f-0cbb897d06f9" />
       
 ---
-https://github.com/user-attachments/assets/334296a3-af78-49e6-afdd-ef5be7555137
-      
-Sample Video: https://youtu.be/Qf8PRYuqDEg      
-
      
 ## ✨ Key Features  
      
@@ -48,9 +44,7 @@ Tested in transparent desktop overlay mode on Windows:
 | **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (~38 FPS) | **~2.5 % – 4.5 %** | **~1.4 % – 2.5 %** | Thin & light laptop, completely silent / no fan spin-up |
 | **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (120 FPS) | ~25 % | ~17 % | High-refresh stress test over transparent desktop |
 | **AMD Ryzen 7 5800X + RTX 2060 Super** | 30–40 FPS | ~3.0 % | **~1.5 % avg** | GPU stays at idle clock states |
-
-And yes, I even tested it on my legendary ASUS UX305CA (Intel Core m3/HD 515) —5% CPU / 4% GPU while active. Task Manager itself uses almost that much, so he wasn't really impressed lol.     
-         
+     
 ---     
      
 ## 🧩 Project Architecture  

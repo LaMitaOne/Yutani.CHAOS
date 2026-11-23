@@ -1,0 +1,9 @@
+Yutani mesh names: cybernetic_skull_helmet.glb
+idx  name                            morph-targets
+  0  Object_0                        targets=0
+  1  Object_1                        targets=0
+  2  Object_2                        targets=0
+  3  Object_3                        targets=0
+  4  Object_4                        targets=0
+  5  Object_5                        targets=0
+  6  Object_6                        targets=0
