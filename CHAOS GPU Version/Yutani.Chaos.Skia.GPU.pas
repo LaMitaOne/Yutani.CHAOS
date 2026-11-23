@@ -623,7 +623,7 @@ begin
   ActiveTargetFPS := 38;
   IdleTargetFPS := 15;
   IdleTimeoutSec := 3.0;
-  FNeckPivotRatio := 0.58;
+  FNeckPivotRatio := 0.70;
 
   { Probe the curated demo meshes shipped beside the executable and load the
     first one found. A corrupt or unsupported file falls back silently to
