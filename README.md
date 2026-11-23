@@ -10,7 +10,8 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
 <img width="821" height="33" alt="Unbenannt" src="https://github.com/user-attachments/assets/ca98dbe8-8cc6-4080-a9e2-919dff901072" />
          
 <img width="482" height="372" alt="Unbenannt" src="https://github.com/user-attachments/assets/e6797fc1-912d-4f6e-925f-0cbb897d06f9" />
-      
+
+Sample Video v0.4: https://youtu.be/sGEjN7L1UJA       
 ---
 
 <img width="269" height="276" alt="6" src="https://github.com/user-attachments/assets/eaac83db-ad01-4319-b007-87f8680cc236" />
