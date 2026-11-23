@@ -12,16 +12,24 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
 <img width="482" height="372" alt="Unbenannt" src="https://github.com/user-attachments/assets/e6797fc1-912d-4f6e-925f-0cbb897d06f9" />
       
 ---
+
+<img width="269" height="276" alt="6" src="https://github.com/user-attachments/assets/eaac83db-ad01-4319-b007-87f8680cc236" />
+<img width="223" height="246" alt="5" src="https://github.com/user-attachments/assets/32855814-4f17-49eb-87bb-89a0c23e4d1c" />
+<img width="271" height="196" alt="4" src="https://github.com/user-attachments/assets/8aa2b22d-162b-4153-9fda-4e1674daa602" />
+<img width="232" height="246" alt="3" src="https://github.com/user-attachments/assets/1220901b-aa54-4c08-a20c-abe9bde5d7e9" />
+<img width="204" height="242" alt="2" src="https://github.com/user-attachments/assets/e9ab4dc1-cbe2-4545-b0cc-a4955bae6757" />
+<img width="229" height="256" alt="1" src="https://github.com/user-attachments/assets/2fc400e7-18f9-4fc5-b3b3-47c2c4bd0a8f" />
+
      
 ## ✨ Key Features  
      
 - **100% GPU Particle Simulation & Splatting:** Spring-damper physics, 3D perspective projection, normal-based rim lighting, volumetric depth shading, and soft radial glow splatting executed directly inside OpenGL 4.3 Compute Shaders (`SSBO` + coherent `imageLoad`/`imageStore`).  
-- **Zero-Dependency 3D Mesh Loader (`.glb` & `.obj`):** Parses binary glTF 2.0 scene hierarchies (`nodes` + `TRS`/`matrix` transforms), extracts normals, supports mesh/keyword filtering, body-part classification, and glTF morph targets / vertex-frame animations.  
-- **Anatomical Neck-Pivot Mouse Tracking:** Smoothly tracks the global cursor position (`GetCursorPos`) with spring-damped inertia and a `smoothstep` neck pivot—turning and nodding the head naturally while keeping the shoulders steady.  
-- **Switchable Hologram Styles:** Live switching between **Classic**, **Cyber** (accent rim-lighting), **Volumetric** (optional pulsating inner brain-core), and **Photo** modes.  
-- **True Per-Pixel Desktop Transparency:** Renders premultiplied-alpha frames via zero-copy PBO readback onto a borderless, transparent, click-through (`WS_EX_TRANSPARENT`) FireMonkey layered window with optional `StayOnTop` toggle.  
+- **Zero-Dependency 3D Mesh Loader (`.glb` & `.obj`):** Parses binary glTF 2.0 scene hierarchies (`nodes` + `TRS`/`matrix` transforms), extracts normals, supports interactive per-part sub-mesh filtering (hair, eyes, glasses, armor, internal parts), body-part classification, and glTF morph targets / vertex-frame animations.  
+- **Anatomical Neck-Pivot & Rigid Head Mouse Tracking:** Smoothly tracks the global cursor position (`GetCursorPos`) with spring-damped inertia and a `smoothstep` neck pivot—turning and nodding the head naturally while keeping shoulders steady, or switching to `0.00 (OFF)` for distortion-free rigid rotation on floating heads and skulls.  
+- **Switchable Hologram Styles & 2D-to-3D Photo Mode:** Live switching between **Classic**, **Cyber** (accent rim-lighting), **Volumetric** (optional pulsating inner brain-core), and **Photo** (`PNG`/`JPG` luma-to-depth + Sobel normal estimation) modes.  
+- **True Per-Pixel Desktop Transparency:** Renders premultiplied-alpha frames via zero-copy dual-PBO readback onto a borderless, transparent, click-through (`WS_EX_TRANSPARENT`) FireMonkey layered window with optional `StayOnTop` toggle.  
 - **Full Lifecycle Scanline Animations:** Includes holographic top-to-bottom build-up (`Spawn`), organic idle hover, and gravity-driven tear-down (`Despawn` + graceful `QuitAfterDespawn` on exit).  
-- **Tabbed Runtime Control Panel & Native System Tray:** Features a compact, HD-screen-friendly tabbed cockpit (`uControls`) and a dependency-free Win32 `Shell_NotifyIconW` system tray menu (`uAppTray`) for quick style switching, spawn/despawn, and window toggles.  
+- **Tabbed Runtime Control Panel & Native System Tray:** Features a compact, HD-screen-friendly tabbed cockpit (`uControls` with dedicated `Appearance / Shader`, `Mesh & Sources`, `Photo`, `Face / Animation`, and `System / Performance` tabs) and a dependency-free Win32 `Shell_NotifyIconW` system tray menu (`uAppTray`).  
 - **Adaptive Idle-FPS Pacing:** Automatically runs at high frame rates during speech, morphing, or animation (`ActiveTargetFPS`) and throttles down after a configurable silence timeout (`IdleTargetFPS`) to keep laptop fans silent.  
 - **Ready for AI & Agent Integration (Roadmap):** Built around target-coordinate particle morphing (`tx, ty, tz`), allowing LLMs / AI agents via API/MCP to control expressions, look in a "mirror" (`look_in_mirror`), and **draw pointers, shapes, and visual highlights directly on the user's desktop**.  
      
@@ -29,8 +37,8 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
      
 ## 🚧 Work in Progress / Experimental  
      
-- **`Yutani.PhotoTo3D` & Full-Body Meshes:** Implemented in code (`PNG`/`JPG` luma-to-depth + Sobel normal estimation and hybrid stitching), currently untested in live production.  
 - **Holo-Shader Facial Controls:** `Mouth Open`, `Eye Openness`, `Chaos Level`, and `Trail Persistence` sliders are wired in the UI (`Face / Animation` tab) but not yet connected inside the `HOLO_PARTICLE_SRC` mesh shader (currently active in the legacy depth-map shader).  
+- **Desktop Projection & AliveHighlighter:** Free-form particle pointers, shapes, and visual screen highlights directly on the desktop canvas.  
 - **LLM / MCP Bridge:** Planned next step for autonomous AI expression, shape projection, and self-reflection.  
      
 ---     
@@ -44,27 +52,61 @@ Tested in transparent desktop overlay mode on Windows:
 | **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (~38 FPS) | **~2.5 % – 4.5 %** | **~1.4 % – 2.5 %** | Thin & light laptop, completely silent / no fan spin-up |
 | **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (120 FPS) | ~25 % | ~17 % | High-refresh stress test over transparent desktop |
 | **AMD Ryzen 7 5800X + RTX 2060 Super** | 30–40 FPS | ~3.0 % | **~1.5 % avg** | GPU stays at idle clock states |
+
+*And yes, I even tested it on my legendary **ASUS UX305CA (Intel Core m3 / HD 515)**—it runs at just **5% CPU / 4% GPU** while active (barely more than Windows Task Manager itself uses). Honestly, he wasn't very impressed lol.*
      
 ---     
      
 ## 🧩 Project Architecture  
      
 - `Yutani.Chaos.Skia.GPU.pas` — Offscreen OpenGL 4.3 context, compute shaders (`PARTICLE_SRC`, `HOLO_PARTICLE_SRC`, `CLEAR_SRC`, `BLUR_SRC`), dual-PBO readback, and `TSkChaos` component.  
-- `Yutani.MeshLoader.pas` — Zero-dependency `.glb` (glTF 2.0) and `.obj` parser with scene-graph transforms, normal calculation, and blend-shape support.  
-- `Yutani.PhotoTo3D.pas` — Experimental 2D portrait-to-3D point-cloud pipeline with Sobel depth-gradient normals.  
+- `Yutani.MeshLoader.pas` — Zero-dependency `.glb` (glTF 2.0) and `.obj` parser with scene-graph transforms, sub-mesh filtering, normal calculation, and blend-shape support.  
+- `Yutani.PhotoTo3D.pas` — 2D portrait-to-3D point-cloud pipeline with Sobel depth-gradient normals and hybrid stitching.  
 - `uSkiaCustomThreadedBase.pas` — High-precision QPC background render thread with hybrid `Sleep`/spin-wait pacing, `RealFPS` counter, and Adaptive Idle-FPS controller.  
-- `uControls.pas` — Runtime-generated tabbed control form (`Appearance / Shader`, `Mesh & Sources`, `Face / Animation`, `System / Performance`).  
+- `uControls.pas` — Runtime-generated tabbed control form (`Appearance / Shader`, `Mesh & Sources`, `Photo`, `Face / Animation`, `System / Performance`).  
 - `uAppTray.pas` — Standalone Win32 notification-area icon and popup menu wrapper for FireMonkey.  
 - `Unit1.pas` — Transparent, click-through desktop host window.  
      
 ---
+    
+## 📝 Changelog
+
+### v0.4 — Sub-Mesh Selection & Neck-Pivot *(or the "Added Mesh Sources in README 'Cause You'll Need Them" Update :D)*
+    
+#### Features & UI
+- **Sub-Mesh Part Selection:** Added interactive per-part checkboxes in the *Mesh & Sources* tab to toggle individual sub-meshes (hair, glasses, eyes, armor, internal parts, etc.) on or off when *Automatic* mode is unchecked.
+- **Smart Automatic Fallback:** Automatically falls back to loading the full mesh if default `ExcludeKeywords` would filter out 100% of a single-mesh model.
+- **Neck-Pivot Controls & Rigid Head Mode:** Added a dedicated *Neck Pivot* slider to fine-tune the anatomical bending point for busts, or set it to `0.00 (OFF)` for distortion-free rigid head rotation on floating heads/skulls.
+- **Dedicated Photo Tab:** Moved photo/image-to-particle settings into their own separate tab in the control panel for a cleaner layout.
+    
+#### Bug Fixes
+- **Fixed SSBO Mesh Reloading (OpenGL Context Threading):** Deferred `glBufferSubData` uploads via a dirty flag (`FSSBODirty`) so buffer updates always execute on the background render thread where `FGLContext` is current—loading new `.glb`/`.obj` meshes and toggling parts now updates immediately.
+- **Fixed Manual Part Filter Override:** Prevented manual sub-mesh selections from falling back to `nil` (Automatic mode) when all checkboxes remain ticked.
+        
+---
+    
+## 🌐 Tested Mesh Sources (Sketchfab CC-BY)
+    
+Want to try more heads right away? Drop any `.glb` or `.obj` into your mesh folder—screenshots were made using some of these free CC-BY models:
+    
+* https://sketchfab.com/3d-models/anime-head-base-mesh-58e291934379438584012d09faefedf6
+* https://sketchfab.com/3d-models/mecha-04-bd307b2be9a147338810249494c54af2
+* https://sketchfab.com/3d-models/girl-with-glasses-4c865c5df17741f7be87392d37fa31eb
+* https://sketchfab.com/3d-models/male-head-0247a25a04ba46b99629130277fe39b7
+* https://sketchfab.com/3d-models/cyborg-head-332e28983a9c476f896f3fdb8d3bd6c5
+* https://sketchfab.com/3d-models/cyberpunk-head-1d4f99091619491fb45b7ecbe2b838b5
+* https://sketchfab.com/3d-models/cybernetic-skull-ee97f182cb4b48e894f66ee2020bc181
+* https://sketchfab.com/3d-models/futuristic-robot-head-a-futuristic-robot-head-da0a453250994ee8a9d99fd4040995f3
+    
+---
      
 ## 📜 3D Asset Credits  
      
-Demo `.glb` models tested with this project (see `MODEL_CREDITS.txt` for full Creative Commons license details):  
+Bundled demo `.glb` models tested with this project (see `MODEL_CREDITS.txt` for full Creative Commons license details):  
 - **Angelica** by *DarkNik* (CC BY 4.0)  
 - **Procedural female scifi armor test 3** by *ghostnoface* (CC BY 4.0)  
-- **Scifi Girl v.01** by *patrix* (CC BY-NC-SA 4.0)  
+- **Scifi Girl v.01** by *patrix* (CC BY-NC-SA 4.0)
+
      
            
 -------------------------------------------------------------------------------------------------------------
