@@ -1,5 +1,5 @@
 {*******************************************************************************
-  SkiaThreadedRenderer
+  SkiaThreadedRenderer  - slightly modified version for Yutani CHAOS
 ********************************************************************************
   A high-performance, threaded FMX Skia component.
   Utilizing Skia4Delphi for off-screen rendering.

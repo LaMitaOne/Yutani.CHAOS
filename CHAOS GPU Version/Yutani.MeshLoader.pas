@@ -77,10 +77,17 @@ type
     MaxParticles: Integer;           // 0 = unlimited, else auto widens Step
     FlipY: Boolean;                  // true for screen coords (Y down)
     ExcludeKeywords: TArray<string>; // drop meshes/groups matching hair/fur/...
+    { When set (length > 0), only meshes/groups whose name contains one of these
+      keywords are emitted. An empty array means "no include filter" (load all
+      parts that survive ExcludeKeywords). Lets the UI expose a per-part
+      checkbox list (head / torso / arm_l / arm_r / ...) by passing the checked
+      names here. Comparison is case-insensitive substring, matching the
+      existing IsExcluded keyword logic. }
+    IncludeNames: TArray<string>;
     RecomputeNormals: Boolean;       // rebuild per-vertex normals from faces
     DetectBodyParts: Boolean;        // run body-part classification
     LoadMorphTargets: Boolean;       // parse glTF blend shapes
-    LoadVertexFrames: Boolean;       // parse glTF morph-weight animations
+    LoadVertexFrames: Boolean;      // parse glTF morph-weight animations
     VoxelDedup: Boolean;              // cap particles per 64^3 voxel so dense interior geometry cannot burn out
     class function Default: TMeshLoadOptions; static;
   end;
@@ -100,6 +107,7 @@ type
   TYutaniMeshLoader = class
   private
     class function IsExcluded(const AName: string; const AKeywords: TArray<string>): Boolean;
+    class function IsIncluded(const AName: string; const AInclude: TArray<string>): Boolean;
     class function IsLeftToken(const AName: string): Boolean;
     class function BodyPartFromName(const AName: string): TMeshBodyPart;
     class procedure DetectBodyParts(var APoints: TArray<TMeshParticlePoint>; const AMeshNames: TArray<string>);
@@ -143,6 +151,7 @@ begin
   Result.MaxParticles := 150000;
   Result.FlipY := True;
   Result.ExcludeKeywords := ['hair', 'fur', 'eyelash', 'lash', 'brow', 'brow_card', 'hair_card', 'teeth', 'tooth', 'tongue', 'gum', 'caruncle', 'mouth', 'mouth_bag', 'mouthinside', 'innermouth', 'mouthcavity', 'oral', 'oralcavity', 'jaw', 'head_inside', 'headinside', 'cornea', 'sclera', 'meniscus', 'iris', 'pupil', 'tear', 'tearduct'];
+  Result.IncludeNames := nil;
   Result.RecomputeNormals := False;
   Result.DetectBodyParts := True;
   Result.LoadMorphTargets := True;
@@ -354,6 +363,26 @@ begin
   Result := False;
 end;
 
+{ True when AName survives the include filter: when IncludeNames is empty
+  every mesh is included; otherwise the name must contain one of the listed
+  keywords. Mirrors IsExcluded's case-insensitive substring matching so the
+  UI checkbox list ("head", "torso", "arm", "leg_l", ...) maps cleanly onto
+  mesh names. }
+class function TYutaniMeshLoader.IsIncluded(const AName: string; const AInclude: TArray<string>): Boolean;
+var
+  LowerName, KW: string;
+begin
+  if Length(AInclude) = 0 then
+    Exit(True);
+  if AName = '' then
+    Exit(False);
+  LowerName := AName.ToLower;
+  for KW in AInclude do
+    if (KW <> '') and LowerName.Contains(KW.ToLower) then
+      Exit(True);
+  Result := False;
+end;
+
 class function TYutaniMeshLoader.IsLeftToken(const AName: string): Boolean;
 var
   S: string;
@@ -532,7 +561,15 @@ begin
     Result.Points := LoadOBJ(AFileName, AOptions, MeshNames, MorphTargets, VertexFrames)
   else
     raise Exception.CreateFmt('Unsupported mesh format: %s (use .glb or .obj)', [Ext]);
-
+  if (Length(Result.Points) = 0) and (Length(AOptions.IncludeNames) = 0) and (Length(AOptions.ExcludeKeywords) > 0) then
+  begin
+    var FallbackOpt := AOptions;
+    FallbackOpt.ExcludeKeywords := nil;
+    if Ext = '.glb' then
+      Result.Points := LoadGLB(AFileName, FallbackOpt, MeshNames, MorphTargets, VertexFrames)
+    else if Ext = '.obj' then
+      Result.Points := LoadOBJ(AFileName, FallbackOpt, MeshNames, MorphTargets, VertexFrames);
+  end;
   Result.MeshNames := MeshNames;
   Result.MorphTargets := MorphTargets;
   Result.VertexFrames := VertexFrames;
@@ -728,7 +765,21 @@ begin
           exclude filter. Each distinct name gets its own mesh index so body
           part detection can use it. }
         GroupName := Line.Substring(Line.IndexOf(' ') + 1).Trim;
-        SkipCurrent := IsExcluded(GroupName, AOptions.ExcludeKeywords);
+        { When the UI passes an explicit IncludeNames list (user ticked parts
+          in the controls panel), the per-part include filter wins and the
+          automatic ExcludeKeywords list is bypassed - so a user can actually
+          re-include "hair", "teeth", ... by ticking them. Empty IncludeNames
+          keeps the default auto-exclude behaviour (drop hair/fur/mouth...). }
+        if Length(AOptions.IncludeNames) > 0 then
+          SkipCurrent := not IsIncluded(GroupName, AOptions.IncludeNames)
+        else
+        begin
+          SkipCurrent := IsExcluded(GroupName, AOptions.ExcludeKeywords);
+          { Per-part include filter: skip groups whose name is not in the
+            IncludeNames list when that list is set. An empty list means no
+            include filtering (load every part that survived the exclude list). }
+          { (include branch handled above - this else keeps the legacy path.) }
+        end;
         if (not SkipCurrent) and (GroupName <> '') then
           if (MeshNameList.Count = 0) or (MeshNameList.Last <> GroupName) then
             MeshNameList.Add(GroupName);
@@ -1136,8 +1187,21 @@ var
       LMeshName := MeshNameList[AMeshIdx]
     else
       LMeshName := '';
-    if IsExcluded(ANodeName, AOptions.ExcludeKeywords) or IsExcluded(LMeshName, AOptions.ExcludeKeywords) then
-      Exit;
+    { When the UI passes an explicit IncludeNames list (user ticked parts in
+      the controls panel), the per-part include filter wins and the automatic
+      ExcludeKeywords list is bypassed - so a user can actually re-include
+      "hair", "teeth", ... by ticking them. Empty IncludeNames keeps the
+      default auto-exclude behaviour (drop hair/fur/mouth...). }
+    if Length(AOptions.IncludeNames) > 0 then
+    begin
+      if not (IsIncluded(ANodeName, AOptions.IncludeNames) or IsIncluded(LMeshName, AOptions.IncludeNames)) then
+        Exit;
+    end
+    else
+    begin
+      if IsExcluded(ANodeName, AOptions.ExcludeKeywords) or IsExcluded(LMeshName, AOptions.ExcludeKeywords) then
+        Exit;
+    end;
     LPrims := JArr(LMeshObj.FindValue('primitives'));
     if LPrims = nil then
       Exit;

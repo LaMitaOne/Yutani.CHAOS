@@ -5,7 +5,10 @@ unit uControls;
   without vertical scrolling:
 
     Appearance / Shader  - holo style + particle/glow/rim/alpha/jitter/inner-core
-    Mesh & Sources       - step filter, particle budget, reload buttons, source
+    Mesh                 - step filter, particle budget, load mesh, per-part
+                           checkbox list with live preview (reloads the mesh on
+                           each toggle), source
+    Photo & Depth        - load photo / depth-map, source
     Face / Animation     - emotion + mouth/eyes/chaos/trail (marked WIP: the holo
                            shader does not yet consume uMouthOpen/uEyeOpeness/
                            uChaosLevel for mesh/hybrid sources)
@@ -18,8 +21,9 @@ interface
 
 uses
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
-  System.Math, FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs,
-  FMX.StdCtrls, FMX.ListBox, FMX.Layouts, FMX.TabControl, Yutani.Chaos.Skia.GPU;
+  System.Math, System.Generics.Collections, FMX.Types, FMX.Controls, FMX.Forms,
+  FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.ListBox, FMX.Layouts,
+  FMX.TabControl, Yutani.Chaos.Skia.GPU, Yutani.MeshLoader;
 
 type
   TForm2 = class(TForm)
@@ -32,9 +36,23 @@ type
     FTimer: TTimer;
     FFpsLabel: TLabel;
     FIdleLabel: TLabel;
-    FSrcLabel: TLabel;
     FValLabels: array[1..16] of TLabel;
     FNextY: Single;
+    { Per-part checkbox grid built from GChaos.MeshNames after a mesh load.
+      FPartChecks mirrors the MeshNames order so a checkbox toggle maps to the
+      same index. FPartCaptions holds the raw mesh-name string shown on each
+      checkbox - used to rebuild the IncludeNames filter on each toggle. }
+    FPartChecks: TList<TCheckBox>;
+    FPartCaptions: TList<string>;
+    FMeshTab: TTabItem;
+    FMeshPartsHost: TLayout;
+    FMeshPartsScroll: TScrollBox;
+    FNoPartsLabel: TLabel;
+    { FAutomaticParts tracks the "Automatic" checkbox state: when True the
+      loader applies its built-in auto-exclude list (hair/fur/mouth...); when
+      False the per-part checkbox grid below wins and the auto-exclude list
+      is bypassed so the user can re-include hair/teeth/etc. by ticking them. }
+    FAutomaticParts: Boolean;
     function NewTab(const ACaption: string): TTabItem;
     function AddSection(const ACaption: string): TLabel;
     function AddLabel(const ACaption: string): TLabel;
@@ -46,10 +64,13 @@ type
     procedure OnComboChange(Sender: TObject);
     procedure OnCheckChange(Sender: TObject);
     procedure OnFpsTimer(Sender: TObject);
-    procedure OnReloadMesh(Sender: TObject);
-    procedure OnReloadPhoto(Sender: TObject);
+    procedure OnLoadMesh(Sender: TObject);
+    procedure OnLoadPhoto(Sender: TObject);
     procedure OnLoadDepth(Sender: TObject);
-    procedure OnNotify(Sender: TObject);
+    { Mesh-parts live preview handler. }
+    procedure OnPartToggle(Sender: TObject);
+    procedure RebuildPartsList;
+    procedure ApplyPartsFilter;
   public
     { Public declarations }
   end;
@@ -158,11 +179,12 @@ const
   tgMouseFollow = 4;
   tgStayOnTop = 5;
   tgClickThrough = 6;
+  tgAutoParts = 7;
 
 const
   { Layout constants - wider-than-tall window sized for a normal HD screen. }
   PANEL_W = 640;
-  PANEL_H = 500;
+  PANEL_H = 520;
   CTRL_X = 24;
   CTRL_W = 560;
   BTN_W = 260;
@@ -175,6 +197,10 @@ begin
   Self.Position := TFormPosition.ScreenCenter;
   Self.OnClose := FormClose;
   Self.OnDestroy := FormDestroy;
+
+  FPartChecks := TList<TCheckBox>.Create;
+  FPartCaptions := TList<string>.Create;
+  FAutomaticParts := True;
 
   FTabs := TTabControl.Create(Self);
   FTabs.Parent := Self;
@@ -198,20 +224,53 @@ begin
     AddTrack(tgJitter, 'Jitter amount', 0.0, 2.0, 0.02, GChaos.JitterAmount);
     AddCheck(tgInnerCore, 'Inner brain-core', GChaos.InnerCore);
 
-    { ---- Tab 2: Mesh & Sources ---- }
-    FCurrentTab := NewTab('Mesh & Sources');
+    { ---- Tab 2: Mesh ---- }
+    FMeshTab := NewTab('Mesh');
+    FCurrentTab := FMeshTab;
     AddSection('MESH / PARTICLES');
     AddTrack(tgStepFilter, 'Step filter', 1, 12, 1, GChaos.StepFilter);
-    AddTrack(tgParticleBudget, 'Particle budget', 500, 200000, 500, GChaos.ParticleBudget);
-    AddSection('SOURCES');
-    AddButton('Reload mesh...', OnReloadMesh);
-    AddButton('Reload photo...', OnReloadPhoto);
-    AddButton('Load depthmap...', OnLoadDepth);
-    AddButton('Ping activity', OnNotify);
-    AddSection('STATUS');
-    FSrcLabel := AddLabel('Source: -');
+    AddTrack(tgParticleBudget, 'Particle budget', 500, 250000, 500, GChaos.ParticleBudget);
+    AddSection('LOAD');
+    AddButton('Load mesh...', OnLoadMesh);
+    AddSection('PARTS');
+    { "Automatic" ticked (default) means: load every surviving part with the
+      built-in auto-exclude (hair/fur/mouth... removed). Untick it to take
+      manual control - then only the ticked parts below are loaded, and the
+      auto-exclude list is bypassed so hair/teeth/etc. can be re-included. }
+    AddCheck(tgAutoParts, 'Automatic (auto-exclude hair/mouth...)', True);
+    { Per-part checkbox list lives in a scroll box so a long mesh (rigged
+      avatar with dozens of named parts) cannot overflow the tab. Using
+      TScrollBox (vertical is the default) keeps it portable across FMX
+      versions where TVertScrollBox lives in different units. }
+    FMeshPartsScroll := TScrollBox.Create(Self);
+    FMeshPartsScroll.Parent := FCurrentTab;
+    FMeshPartsScroll.Position.X := CTRL_X;
+    FMeshPartsScroll.Position.Y := FNextY;
+    FMeshPartsScroll.Width := CTRL_W;
+    FMeshPartsScroll.Height := 220;
+    FMeshPartsScroll.Anchors := [TAnchorKind.akLeft, TAnchorKind.akRight, TAnchorKind.akTop, TAnchorKind.akBottom];
+    FNextY := FNextY + 230;
+    FMeshPartsHost := TLayout.Create(Self);
+    FMeshPartsHost.Parent := FMeshPartsScroll;
+    FMeshPartsHost.Align := TAlignLayout.Client;
+    { FNoPartsLabel is shown when no mesh is loaded yet; RebuildPartsList
+      hides it once a real parts list is built. }
+    FNoPartsLabel := TLabel.Create(Self);
+    FNoPartsLabel.Parent := FMeshPartsHost;
+    FNoPartsLabel.Position.X := 8;
+    FNoPartsLabel.Position.Y := 8;
+    FNoPartsLabel.Width := CTRL_W - 16;
+    FNoPartsLabel.Text := 'Load a .glb/.obj mesh to see its parts here.';
+    RebuildPartsList;
 
-    { ---- Tab 3: Face / Animation ---- }
+    { ---- Tab 3: Photo & Depth ---- }
+    FCurrentTab := NewTab('Photo & Depth');
+    AddSection('LOAD');
+    AddButton('Load photo...', OnLoadPhoto);
+    AddButton('Load depthmap...', OnLoadDepth);
+    AddLabel('Photo / depth-map sources have no named parts to toggle.');
+
+    { ---- Tab 4: Face / Animation ---- }
     FCurrentTab := NewTab('Face / Animation');
     AddSection('EMOTION');
     AddCombo(tgEmotion, 'Emotion', ['Neutral', 'Thinking', 'Happy', 'Alert'], Ord(GChaos.EmotionMode));
@@ -224,7 +283,7 @@ begin
     AddTrack(tgTrailPersist, 'Trail persistence (WIP)', 0.0, 1.0, 0.02, GChaos.TrailPersistence, True);
     AddTrack(tgNeckPivot, 'Neck pivot', 0.0, 1.0, 0.01, GChaos.NeckPivotRatio);
 
-    { ---- Tab 4: System / Performance ---- }
+    { ---- Tab 5: System / Performance ---- }
     FCurrentTab := NewTab('System / Performance');
     AddSection('FRAME RATE');
     AddCheck(tgActive, 'Active', GChaos.Active);
@@ -240,17 +299,6 @@ begin
     AddSection('LIVE');
     FFpsLabel := AddLabel('Real FPS: -');
     FIdleLabel := AddLabel('Idle: -');
-
-    case GChaos.SourceType of
-      srcDepthMap:
-        FSrcLabel.Text := 'Source: depth-map face';
-      srcMesh:
-        FSrcLabel.Text := 'Source: mesh';
-      srcPhoto:
-        FSrcLabel.Text := 'Source: photo';
-      srcHybrid:
-        FSrcLabel.Text := 'Source: hybrid';
-    end;
   end
   else
   begin
@@ -271,6 +319,8 @@ procedure TForm2.FormDestroy(Sender: TObject);
 begin
   if Assigned(FTimer) then
     FTimer.Enabled := False;
+  FreeAndNil(FPartChecks);
+  FreeAndNil(FPartCaptions);
 end;
 
 procedure TForm2.FormClose(Sender: TObject; var Action: TCloseAction);
@@ -315,8 +365,18 @@ procedure TForm2.AddTrack(ATag: Integer; const ACaption: string; AMin, AMax, ASt
 var
   L: TLabel;
   tb: TTrackBar;
+  InitialText: string;
+const
+  { Integer-valued trackbars get a plain integer label (no decimal comma) -
+    StepFilter / ParticleBudget / TargetFPS tiers are whole numbers, so
+    "Particle budget: 250000.00" reads wrong. }
+  INT_TAGS: set of Byte = [tgStepFilter, tgParticleBudget, tgTargetFPS, tgActiveTargetFPS, tgIdleTargetFPS];
 begin
-  L := AddLabel(ACaption + ': ' + FormatFloat('0.00', AValue));
+  if ATag in INT_TAGS then
+    InitialText := ACaption + ': ' + IntToStr(Round(AValue))
+  else
+    InitialText := ACaption + ': ' + FormatFloat('0.00', AValue);
+  L := AddLabel(InitialText);
   if (ATag >= Low(FValLabels)) and (ATag <= High(FValLabels)) then
     FValLabels[ATag] := L;
   tb := TTrackBar.Create(Self);
@@ -382,6 +442,135 @@ begin
   btn.OnClick := AOnClick;
   FNextY := FNextY + 34;
 end;
+
+{==============================================================================
+  Per-part checkbox list (live preview)
+==============================================================================}
+function IsExcludedName(const AName: string): Boolean;
+var
+  KW, LowName: string;
+begin
+  LowName := AName.ToLower;
+  for KW in TMeshLoadOptions.Default.ExcludeKeywords do
+    if (KW <> '') and LowName.Contains(KW.ToLower) then
+      Exit(True);
+  Result := False;
+end;
+
+procedure TForm2.RebuildPartsList;
+var
+  Names: TArray<string>;
+  I: Integer;
+  cb: TCheckBox;
+  OldY: Single;
+begin
+  { Tear down the previous checkbox grid. The list is rebuilt after every
+    LoadMeshFile/LoadPhotoFile/LoadDepthMap so the checkbox set always mirrors
+    the currently loaded mesh's actual mesh-name list. }
+  while FPartChecks.Count > 0 do
+  begin
+    cb := FPartChecks.Last;
+    cb.Parent := nil;
+    cb.Free;
+    FPartChecks.Delete(FPartChecks.Count - 1);
+  end;
+  FPartCaptions.Clear;
+
+  if not Assigned(GChaos) then
+  begin
+    if Assigned(FNoPartsLabel) then
+      FNoPartsLabel.Visible := True;
+    Exit;
+
+  end;
+
+  Names := GChaos.MeshNames;
+  if Length(Names) = 0 then
+  begin
+    { Photo / depth sources have no named parts to toggle. }
+    if Assigned(FNoPartsLabel) then
+    begin
+      FNoPartsLabel.Visible := True;
+      if GChaos.SourceType = srcPhoto then
+        FNoPartsLabel.Text := 'Photo source - no named parts.'
+      else
+        FNoPartsLabel.Text := 'Load a .glb/.obj mesh to see its parts here.';
+    end;
+    Exit;
+  end;
+
+  if Assigned(FNoPartsLabel) then
+    FNoPartsLabel.Visible := False;
+
+  { Save/restore the next-row cursor because the parts list is laid out inside
+    the scroll box, not on the tab page's main flow. }
+  OldY := FNextY;
+  FNextY := 6;
+  for I := 0 to High(Names) do
+  begin
+    cb := TCheckBox.Create(Self);
+    cb.Parent := FMeshPartsHost;
+    cb.Position.X := 8;
+    cb.Position.Y := FNextY;
+    cb.Width := CTRL_W - 16;
+    cb.Text := Names[I];
+    { Default: every part is included. Toggling off removes the part from the
+      IncludeNames filter and triggers an immediate reload for live preview. }
+    cb.IsChecked := not IsExcludedName(Names[I]);
+    cb.Tag := I;
+    cb.OnChange := OnPartToggle;
+    FPartChecks.Add(cb);
+    FPartCaptions.Add(Names[I]);
+    FNextY := FNextY + 26;
+  end;
+  FNextY := OldY;
+end;
+
+procedure TForm2.ApplyPartsFilter;
+var
+  Filter: TArray<string>;
+  I: Integer;
+begin
+  if not Assigned(GChaos) then
+    Exit;
+
+  if FAutomaticParts then
+  begin
+    GChaos.MeshIncludeNames := nil;
+  end
+  else
+  begin
+    SetLength(Filter, 0);
+    for I := 0 to FPartChecks.Count - 1 do
+      if FPartChecks[I].IsChecked then
+      begin
+        SetLength(Filter, Length(Filter) + 1);
+        Filter[High(Filter)] := FPartCaptions[I];
+      end;
+
+    if Length(Filter) = 0 then
+      Filter := ['__NONE__'];
+
+    GChaos.MeshIncludeNames := Filter;
+  end;
+
+  if (GChaos.SourceType = srcMesh) and (Length(GChaos.MeshNames) > 0) then
+    GChaos.ReloadCurrentSource;
+end;
+
+procedure TForm2.OnPartToggle(Sender: TObject);
+begin
+  { A per-part checkbox was toggled: if the user is manually curating parts
+    (Automatic unticked) we take that as "manual mode" and reload with the
+    new IncludeNames set. If Automatic is still ticked we ignore the toggle
+    - the user has to untick Automatic first to take control of the list. }
+  if not FAutomaticParts then
+    ApplyPartsFilter;
+end;
+
+{==============================================================================
+  Track / Combo / Check change handlers
+==============================================================================}
 
 procedure TForm2.OnTrackChange(Sender: TObject);
 var
@@ -471,7 +660,10 @@ begin
     tgNeckPivot:
       begin
         GChaos.NeckPivotRatio := v;
-        FValLabels[tgNeckPivot].Text := 'Neck pivot: ' + FormatFloat('0.00', v);
+        if v <= 0.001 then
+          FValLabels[tgNeckPivot].Text := 'Neck pivot: OFF (Rigid Head)'
+        else
+          FValLabels[tgNeckPivot].Text := 'Neck pivot: ' + FormatFloat('0.00', v);
       end;
   end;
 end;
@@ -511,6 +703,14 @@ begin
       GChaos.StayOnTop := cb.IsChecked;
     tgClickThrough:
       GChaos.ClickThrough := cb.IsChecked;
+    tgAutoParts:
+      begin
+        { Toggling Automatic switches between auto-exclude mode (tick) and
+          manual per-part mode (untick). In manual mode we immediately reload
+          with the current checkbox set so the avatar reflects the choice. }
+        FAutomaticParts := cb.IsChecked;
+        ApplyPartsFilter;
+      end;
   end;
 end;
 
@@ -525,7 +725,11 @@ begin
     FIdleLabel.Text := 'Idle: no (active pacing)';
 end;
 
-procedure TForm2.OnReloadMesh(Sender: TObject);
+{==============================================================================
+  Source reload handlers
+==============================================================================}
+
+procedure TForm2.OnLoadMesh(Sender: TObject);
 var
   dlg: TOpenDialog;
 begin
@@ -536,13 +740,20 @@ begin
     dlg.Filter := 'Mesh files|*.glb;*.obj|All files|*.*';
     dlg.InitialDir := ExtractFilePath(ParamStr(0));
     if dlg.Execute then
+    begin
+      { Reset the per-part filter on a fresh file pick so every part is shown
+        by default; RebuildPartsList then mirrors the newly loaded mesh's
+        actual mesh-name list. }
+      GChaos.MeshIncludeNames := nil;
       GChaos.LoadMeshFile(dlg.FileName, Min(GChaos.Width, GChaos.Height) * 0.45, GChaos.StepFilter, GChaos.ParticleBudget);
+      RebuildPartsList;
+    end;
   finally
     dlg.Free;
   end;
 end;
 
-procedure TForm2.OnReloadPhoto(Sender: TObject);
+procedure TForm2.OnLoadPhoto(Sender: TObject);
 var
   dlg: TOpenDialog;
 begin
@@ -553,7 +764,10 @@ begin
     dlg.Filter := 'Photo files|*.png;*.jpg;*.jpeg|All files|*.*';
     dlg.InitialDir := ExtractFilePath(ParamStr(0));
     if dlg.Execute then
+    begin
       GChaos.LoadPhotoFile(dlg.FileName, Min(GChaos.Width, GChaos.Height) * 0.45, GChaos.StepFilter, GChaos.ParticleBudget);
+      RebuildPartsList;
+    end;
   finally
     dlg.Free;
   end;
@@ -574,16 +788,13 @@ begin
     if FileExists(f) then
       dlg.FileName := f;
     if dlg.Execute then
+    begin
       GChaos.LoadDepthMap(dlg.FileName);
+      RebuildPartsList;
+    end;
   finally
     dlg.Free;
   end;
-end;
-
-procedure TForm2.OnNotify(Sender: TObject);
-begin
-  if Assigned(GChaos) then
-    GChaos.NotifyActivity;
 end;
 
 end.

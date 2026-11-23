@@ -1,22 +1,24 @@
 unit Yutani.Chaos.Skia.GPU;
 
 {==============================================================================*
- *  Yutani C.H.A.O.S. Skia GPU v0.3 - Holographic AI Desktop Overlay
+ *  Yutani C.H.A.O.S. Skia GPU v0.4 - Holographic AI Desktop Overlay
  *------------------------------------------------------------------------------
  *  Module : Yutani.Chaos.Skia.GPU
  *  Type   : GPU-Accelerated Holographic AI Interface & Desktop Canvas
  *  Author : Lara Miriam Tamy Reschke / LamitaOne
  *------------------------------------------------------------------------------
  *  Description:
- *  This unit renders a dynamic, holographic AI face ("Chaos") and free-form
+ *  This unit renders a dynamic, holographic AI avatar ("Chaos") and free-form
  *  desktop projections using an OpenGL 4.3 Compute Shader pipeline. Particle
- *  spring physics, 3D perspective projection, depth-based volumetric shading,
- *  and soft radial glow splatting are executed entirely on the GPU via SSBOs
- *  and coherent image load/store operations. The resulting premultiplied-alpha
- *  frame is composited via Skia onto a transparent, click-through FireMonkey
- *  layered window with minimal CPU/GPU footprint, supporting full build-up
- *  (formation), tear-down (gravity fade), and adaptive FPS scaling.
+ *  spring physics, 3D perspective projection with anatomical neck-pivot or
+ *  rigid head tracking, depth-based volumetric shading, and soft radial glow
+ *  splatting are executed entirely on the GPU via SSBOs and coherent image
+ *  load/store operations. Supports procedural faces, 3D meshes (.glb/.obj)
+ *  with sub-mesh filtering, and photo-to-particle targets, composited via
+ *  Skia onto a transparent, click-through FireMonkey layered window with
+ *  minimal CPU/GPU footprint, full formation/dissolve states, and adaptive FPS.
  *==============================================================================}
+
 
 interface
 
@@ -31,8 +33,8 @@ const
   CHAOS_HEIGHT = 252;
   PARTICLE_MAX = 500000;
   DEFAULT_PARTICLE_BUDGET = 250000;
-  SSBO_PARTICLE_SIZE = 52;    // FIX: was 48, sizeof(TParticleCPU)=52
-  DEPTH_MAP_STEP = 10;    // match CPU original
+  SSBO_PARTICLE_SIZE = 52;
+  DEPTH_MAP_STEP = 10;
   WGL_CONTEXT_MAJOR_VERSION_ARB = $2091;
   WGL_CONTEXT_MINOR_VERSION_ARB = $2092;
   WGL_CONTEXT_PROFILE_MASK_ARB = $9126;
@@ -202,6 +204,12 @@ type
     FParticleSSBO: Cardinal;
     FParticleCount: Cardinal;
     FParticleCPU: TBytes;
+    { Set on the UI thread when the particle cloud / count changed and the
+      SSBO must be re-uploaded. The actual glBindBuffer / glBufferSubData call
+      happens on the render thread in RenderEffect, where FGLContext is
+      current. Doing it on the UI thread silently fails because
+      wglGetCurrentContext() is 0 there. }
+    FSSBODirty: Boolean;
     FParticleProgram: Cardinal;
     FClearProgram: Cardinal;        // clears output texture per frame
     FBlurProgram: Cardinal;         // separable gaussian blur (H + V)
@@ -228,6 +236,11 @@ type
     FLookTargetX, FLookTargetY: Single;
     FCurrentMeshFile: string;
     FCurrentPhotoFile: string;
+    { Per-part include filter persisted on the avatar so the controls panel
+      can toggle parts on/off live and re-load the current source. Empty means
+      "load every part that survives the exclude keyword list"; non-empty means
+      only meshes whose name contains one of these keywords are emitted. }
+    FMeshIncludeNames: TArray<string>;
     FPivotY: Single;
     FNeckPivotRatio: Single;
     FGlobalTime: Double;
@@ -358,6 +371,12 @@ type
     procedure LoadMeshFile(const AFileName: string; ATargetRadius: Single = 150.0; AStep: Integer = 1; AMaxParticles: Integer = 120000);
     procedure LoadPhotoFile(const AFileName: string; ATargetRadius: Single = 130.0; AStep: Integer = 2; AMaxParticles: Integer = 80000);
     procedure LoadHybrid(const AMeshFile, APhotoFile: string);
+    { Re-applies the currently loaded source (mesh or photo) with the current
+      StepFilter / ParticleBudget / MeshIncludeNames. Used by the controls
+      panel so a per-part checkbox toggle or a budget change can re-load the
+      same file the user picked without the panel needing to remember the
+      path. No-op when no source file is loaded. }
+    procedure ReloadCurrentSource;
     { Sets a single morph-target weight by name (head_neutral, mouth_open,
       smile, blink, ...). Stops any playing vertex-frame animation so the
       manual weight takes over. }
@@ -415,6 +434,16 @@ type
     { Let mouse clicks pass through the host window to what is behind. }
     property ClickThrough: Boolean read FClickThrough write SetClickThrough default False;
     property AutoMeshFile: string read FAutoMeshFile;
+    { Per-part include filter. Pass the mesh-name keywords (e.g. ['head','torso','arm_l','leg_l'])
+      to load only those parts on the next LoadMeshFile call; pass nil to clear
+      the filter and load every surviving part. The controls panel toggles this
+      live and reloads the current mesh so the user sees the result immediately. }
+    property MeshIncludeNames: TArray<string> read FMeshIncludeNames write FMeshIncludeNames;
+    { Names of every mesh/group the most recent mesh load saw - exposed so the
+      controls panel can build the per-part checkbox list after a mesh loads
+      without having to re-parse the file itself. Returns the same list the
+      MeshLoader wrote to FMeshResult.MeshNames. Empty for photo/depth sources. }
+    property MeshNames: TArray<string> read FMeshResult.MeshNames;
   end;
 
 implementation
@@ -442,7 +471,8 @@ const
     // project3D - rotate the head around the neck pivot (uPivotY) toward the
     // cursor with mild perspective; smoothstep fades rotation below the pivot
     // so the shoulders stay still.
-    'vec2 project3D(vec3 p) {'#10 + '  float rotY = -uLookX * 0.4;'#10 + '  float rotX = -uLookY * 0.25;'#10 + '  float pivotY = uPivotY;'#10 + '  float w = 1.0 - smoothstep(pivotY - 14.0, pivotY + 18.0, p.y);'#10 + '  float wy = 0.15 + 0.85 * w;'#10 + '  float wx = w;'#10 + '  float ry = rotY * wy;'#10 + '  float rx = rotX * wx;'#10 + '  float py = p.y - pivotY;'#10 + '  float x1 = p.x * cos(ry) - p.z * sin(ry);'#10 + '  float z1 = p.x * sin(ry) + p.z * cos(ry);'#10 + '  float y1 = py * cos(rx) - z1 * sin(rx);'#10 + '  float z2 = py * sin(rx) + z1 * cos(rx);'#10 + '  float persp = 1.0 + (z2 * 0.0022);'#10 + '  return vec2(x1 * persp, (y1 + pivotY) * persp + 15.0);'#10 + '}'#10 + ''#10 +
+    'vec2 project3D(vec3 p) {'#10 + '  float rotY = -uLookX * 0.4;'#10 + '  float rotX = -uLookY * 0.25;'#10 + '  float pivotY = uPivotY;'#10 + '  float w = (uPivotY <= -9000.0) ? 1.0 : (1.0 - smoothstep(pivotY - 14.0, pivotY + 18.0, p.y));'#10 + '  if (uPivotY <= -9000.0) pivotY = 0.0;'#10 + '  float wy = 0.15 + 0.85 * w;'#10 + '  float wx = w;'#10 + '  float ry = rotY * wy;'#10 + '  float rx = rotX * wx;'#10 + '  float py = p.y - pivotY;'#10 + '  float x1 = p.x * cos(ry) - p.z * sin(ry);'#10 +
+    '  float z1 = p.x * sin(ry) + p.z * cos(ry);'#10 + '  float y1 = py * cos(rx) - z1 * sin(rx);'#10 + '  float z2 = py * sin(rx) + z1 * cos(rx);'#10 + '  float persp = 1.0 + (z2 * 0.0022);'#10 + '  return vec2(x1 * persp, (y1 + pivotY) * persp + 15.0);'#10 + '}'#10 + ''#10 +
     // toScreenFloat - offset projected coords to pixel space (viewport-center origin).
     'vec2 toScreenFloat(vec2 p2) {'#10 + '  return vec2(p2.x + uResolution.x * 0.5,'#10 + '              p2.y + uResolution.y * 0.5);'#10 + '}'#10 + ''#10 +
     // rand - cheap deterministic hash for per-particle randomness.
@@ -487,7 +517,8 @@ const
     'uniform float uDeltaTime;'#10 + 'uniform float uTime;'#10 + 'uniform vec2  uResolution;'#10 + 'uniform uint  uParticleCount;'#10 + 'uniform int   uState;'#10 + 'uniform float uBuildScanY;'#10 + 'uniform float uDespawnScanY;'#10 + 'uniform float uLookX;'#10 + 'uniform float uLookY;'#10 + 'uniform float uPivotY;'#10 + 'uniform int   uHoloStyle;'#10 + 'uniform float uParticleSize;'#10 + 'uniform float uGlowIntensity;'#10 + 'uniform float uRimLightStrength;'#10 + 'uniform float uAlpha;'#10 + 'uniform float uJitter;'#10 + 'uniform vec4  uFaceColor;'#10 + 'uniform vec4  uAccentColor;'#10 + ''#10 +
     // project3D - rotate the head around the neck pivot (uPivotY) toward the
     // cursor with mild perspective; smoothstep fades rotation below the pivot.
-    'vec2 project3D(vec3 p) {'#10 + '  float rotY = -uLookX * 0.4;'#10 + '  float rotX = -uLookY * 0.25;'#10 + '  float pivotY = uPivotY;'#10 + '  float w = 1.0 - smoothstep(pivotY - 14.0, pivotY + 18.0, p.y);'#10 + '  float wy = 0.15 + 0.85 * w;'#10 + '  float wx = w;'#10 + '  float ry = rotY * wy;'#10 + '  float rx = rotX * wx;'#10 + '  float py = p.y - pivotY;'#10 + '  float x1 = p.x * cos(ry) - p.z * sin(ry);'#10 + '  float z1 = p.x * sin(ry) + p.z * cos(ry);'#10 + '  float y1 = py * cos(rx) - z1 * sin(rx);'#10 + '  float z2 = py * sin(rx) + z1 * cos(rx);'#10 + '  float persp = 1.0 + (z2 * 0.0022);'#10 + '  return vec2(x1 * persp, (y1 + pivotY) * persp + 15.0);'#10 + '}'#10 +
+    'vec2 project3D(vec3 p) {'#10 + '  float rotY = -uLookX * 0.4;'#10 + '  float rotX = -uLookY * 0.25;'#10 + '  float pivotY = uPivotY;'#10 + '  float w = (uPivotY <= -9000.0) ? 1.0 : (1.0 - smoothstep(pivotY - 14.0, pivotY + 18.0, p.y));'#10 + '  if (uPivotY <= -9000.0) pivotY = 0.0;'#10 + '  float wy = 0.15 + 0.85 * w;'#10 + '  float wx = w;'#10 + '  float ry = rotY * wy;'#10 + '  float rx = rotX * wx;'#10 + '  float py = p.y - pivotY;'#10 + '  float x1 = p.x * cos(ry) - p.z * sin(ry);'#10 +
+    '  float z1 = p.x * sin(ry) + p.z * cos(ry);'#10 + '  float y1 = py * cos(rx) - z1 * sin(rx);'#10 + '  float z2 = py * sin(rx) + z1 * cos(rx);'#10 + '  float persp = 1.0 + (z2 * 0.0022);'#10 + '  return vec2(x1 * persp, (y1 + pivotY) * persp + 15.0);'#10 + '}'#10 +
     // toScreenFloat - offset projected coords to pixel space.
     'vec2 toScreenFloat(vec2 p2) {'#10 + '  return vec2(p2.x + uResolution.x * 0.5, p2.y + uResolution.y * 0.5);'#10 + '}'#10 +
     // rand - cheap deterministic hash.
@@ -1047,11 +1078,13 @@ end;
 
 procedure TSkChaos.UploadSSBO;
 begin
-  if FParticleSSBO = 0 then
+  { Do NOT touch GL here: this runs on the UI thread, where FGLContext is
+    not current, so glBindBuffer / glBufferSubData would silently fail.
+    Just flag the buffer as dirty; RenderEffect uploads it on the render
+    thread where the context is bound. }
+  if (FParticleCount = 0) or (Length(FParticleCPU) = 0) then
     Exit;
-  FnBindBuffer(GL_SHADER_STORAGE_BUFFER, FParticleSSBO);
-  FnBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, NativeInt(FParticleCount) * SSBO_PARTICLE_SIZE, @FParticleCPU[0]);
-  FnBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+  FSSBODirty := True;
 end;
 
 procedure TSkChaos.ReinitParticlesForForming;
@@ -1249,6 +1282,18 @@ begin
     FLastTime := 0;
   end;
   wglMakeCurrent(FDummyDC, FGLContext);
+    // Deferred SSBO upload: UploadSSBO only sets FSSBODirty on the UI thread.
+    // The actual GL upload must happen here, while FGLContext is current,
+    // otherwise glBufferSubData silently fails and the GPU keeps rendering
+    // the initial (Angelica) particle cloud no matter how often the CPU
+    // buffer changes.
+  if FSSBODirty and (FParticleSSBO <> 0) and (FParticleCount > 0) and (Length(FParticleCPU) > 0) then
+  begin
+    FnBindBuffer(GL_SHADER_STORAGE_BUFFER, FParticleSSBO);
+    FnBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, NativeInt(FParticleCount) * SSBO_PARTICLE_SIZE, @FParticleCPU[0]);
+    FnBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    FSSBODirty := False;
+  end;
 
   // Real DeltaTime from the monotonic ATime the base thread passes in.
   if FLastTime = 0 then
@@ -1634,32 +1679,69 @@ end;
 procedure TSkChaos.LoadMeshFile(const AFileName: string; ATargetRadius: Single; AStep: Integer; AMaxParticles: Integer);
 var
   Opt: TMeshLoadOptions;
+  NewResult: TMeshLoadResult;
+  WasActive: Boolean;
 begin
-  Opt := TMeshLoadOptions.Default;
-  Opt.TargetRadius := ATargetRadius;
-  Opt.Step := Max(1, AStep);
-  Opt.MaxParticles := AMaxParticles;
-  FCurrentMeshFile := AFileName;
-  FMeshResult := TYutaniMeshLoader.LoadFromFile(AFileName, Opt);
-  FMeshBase := Copy(FMeshResult.Points);
-  FMeshScale := FMeshResult.Scale;
-  FMeshFlipY := Opt.FlipY;
-  FSourceType := srcMesh;
-  SetLength(FMorphWeights, Length(FMeshResult.MorphTargets));
-  FActiveSequence := -1;
-  FAnimTime := 0;
-  ApplyCurrentMorph;
-  if FHoloStyle = hsClassic then
-    FHoloStyle := hsCyber;
-  if FGLReady then
+  { STOP the render thread before touching any mesh/particle state. The
+    background thread's AdvanceMorphAnimation -> ApplyCurrentMorph path writes
+    FMeshResult.Points[I].Position := FMeshBase[I].Position every frame, so a
+    naive mid-frame LoadMeshFile gets clobbered the instant it returns - which
+    is exactly the "load a new mesh but only the particle count changes, the
+    cloud still looks like angelica" bug. Pausing + giving the thread one frame
+    to drain in-flight work, then swapping the data atomically and clearing the
+    particle buffer, guarantees the new mesh is what gets rendered next. }
+  WasActive := Active;
+  if WasActive then
   begin
-    BuildMeshTargets(FMeshResult.Points);
-    { Wipe stale positions and restart the spawn animation so the previous
-      mesh/photo cloud cannot bleed through as a morphing mix. }
-    ReinitParticlesForForming;
-    FState := csForming;
-    FBuildScanY := FMinY;
-    FDespawnScanY := FMinY;
+    Active := False;        // sets FPaused := True; UpdateLogic stops
+    Sleep(20);              // let the render thread finish its current frame
+  end;
+  try
+    Opt := TMeshLoadOptions.Default;
+    Opt.TargetRadius := ATargetRadius;
+    Opt.Step := Max(1, AStep);
+    Opt.MaxParticles := AMaxParticles;
+    Opt.IncludeNames := FMeshIncludeNames;
+    { Load into a temp first so a corrupt/empty file cannot leave the avatar in
+      a half-overwritten state - the old mesh stays live until the new one is
+      fully parsed, then we swap atomically. }
+    NewResult := TYutaniMeshLoader.LoadFromFile(AFileName, Opt);
+    FCurrentMeshFile := AFileName;
+    FMeshResult := NewResult;
+    FMeshBase := Copy(FMeshResult.Points);
+    FMeshScale := FMeshResult.Scale;
+    FMeshFlipY := Opt.FlipY;
+    FSourceType := srcMesh;
+    SetLength(FMorphWeights, Length(FMeshResult.MorphTargets));
+    FActiveSequence := -1;
+    FAnimTime := 0;
+    { Wipe the morph target cache so ApplyCurrentMorph (which the render thread
+      re-calls on resume) does not pull stale base/delta arrays sized for the
+      previous mesh. Re-applying with the now-empty base is a no-op until the
+      buffer is rebuilt below. }
+    ApplyCurrentMorph;
+    if FHoloStyle = hsClassic then
+      FHoloStyle := hsCyber;
+    { Force-clear the active particle count before rebuilding so a shorter new
+      mesh cannot leak the previous mesh's leftover particles (BuildMeshTargets
+      only writes up to Length(Points); anything beyond stayed stale before). }
+    FParticleCount := 0;
+    if FGLReady then
+    begin
+      BuildMeshTargets(FMeshResult.Points);
+      { Wipe stale positions and restart the spawn animation so the previous
+        mesh/photo cloud cannot bleed through as a morphing mix. }
+      ReinitParticlesForForming;
+      FState := csForming;
+      FBuildScanY := FMinY;
+      FDespawnScanY := FMinY;
+    end;
+  finally
+    { RESTART the render thread. Order matters: the thread checks Active again
+      on entry and ReinitParticlesForForming needs FGLReady + the rebuilt
+      targets already in place, so resume only after the swap above. }
+    if WasActive then
+      Active := True;
   end;
   NotifyActivity;
 end;
@@ -1668,33 +1750,50 @@ procedure TSkChaos.LoadPhotoFile(const AFileName: string; ATargetRadius: Single;
 var
   Opt: TPhotoLoadOptions;
   Pts: TArray<TMeshParticlePoint>;
+  WasActive: Boolean;
 begin
-  Opt := TPhotoLoadOptions.Default;
-  Opt.TargetRadius := ATargetRadius;
-  Opt.Step := Max(1, AStep);
-  Opt.MaxParticles := AMaxParticles;
-  FCurrentPhotoFile := AFileName;
-  Pts := TYutaniPhotoTo3D.LoadFromFile(AFileName, Opt);
-  FMeshResult.Points := Pts;
-  FMeshResult.MorphTargets := nil;
-  FMeshResult.VertexFrames := nil;
-  FMeshResult.MeshNames := nil;
-  FMeshBase := Copy(Pts);
-  FMeshScale := 1.0;
-  FMeshFlipY := Opt.FlipY;
-  FSourceType := srcPhoto;
-  SetLength(FMorphWeights, 0);
-  FActiveSequence := -1;
-  FAnimTime := 0;
-  if FHoloStyle = hsClassic then
-    FHoloStyle := hsPhoto;
-  if FGLReady then
+  { Same Stop-Clear-Load-Restart sequence as LoadMeshFile: the render thread's
+    ApplyCurrentMorph path would otherwise clobber the freshly swapped
+    FMeshResult.Points with the stale FMeshBase before the new photo cloud can
+    form. Pause, drain one frame, swap, then resume. }
+  WasActive := Active;
+  if WasActive then
   begin
-    BuildMeshTargets(Pts);
-    ReinitParticlesForForming;
-    FState := csForming;
-    FBuildScanY := FMinY;
-    FDespawnScanY := FMinY;
+    Active := False;
+    Sleep(20);
+  end;
+  try
+    Opt := TPhotoLoadOptions.Default;
+    Opt.TargetRadius := ATargetRadius;
+    Opt.Step := Max(1, AStep);
+    Opt.MaxParticles := AMaxParticles;
+    FCurrentPhotoFile := AFileName;
+    Pts := TYutaniPhotoTo3D.LoadFromFile(AFileName, Opt);
+    FMeshResult.Points := Pts;
+    FMeshResult.MorphTargets := nil;
+    FMeshResult.VertexFrames := nil;
+    FMeshResult.MeshNames := nil;
+    FMeshBase := Copy(Pts);
+    FMeshScale := 1.0;
+    FMeshFlipY := Opt.FlipY;
+    FSourceType := srcPhoto;
+    SetLength(FMorphWeights, 0);
+    FActiveSequence := -1;
+    FAnimTime := 0;
+    if FHoloStyle = hsClassic then
+      FHoloStyle := hsPhoto;
+    FParticleCount := 0;
+    if FGLReady then
+    begin
+      BuildMeshTargets(Pts);
+      ReinitParticlesForForming;
+      FState := csForming;
+      FBuildScanY := FMinY;
+      FDespawnScanY := FMinY;
+    end;
+  finally
+    if WasActive then
+      Active := True;
   end;
   NotifyActivity;
 end;
@@ -1705,50 +1804,78 @@ var
   PhotoOpt: TPhotoLoadOptions;
   MeshPts, PhotoPts: TArray<TMeshParticlePoint>;
   Base, I: Integer;
+  WasActive: Boolean;
 begin
-  MeshOpt := TMeshLoadOptions.Default;
-  MeshOpt.TargetRadius := 180.0;
-  MeshOpt.Step := 1;
-  MeshOpt.MaxParticles := 90000;
-  MeshPts := TYutaniMeshLoader.LoadFromFile(AMeshFile, MeshOpt).Points;
-  PhotoOpt := TPhotoLoadOptions.Default;
-  PhotoOpt.TargetRadius := 90.0;
-  PhotoOpt.Step := 2;
-  PhotoOpt.MaxParticles := 30000;
-  PhotoPts := TYutaniPhotoTo3D.LoadFromFile(APhotoFile, PhotoOpt);
-  { Stitch the photo face onto the upper third of the mesh body. }
-  Base := Length(MeshPts);
-  SetLength(FMeshResult.Points, Base + Length(PhotoPts));
-  for I := 0 to Base - 1 do
-    FMeshResult.Points[I] := MeshPts[I];
-  for I := 0 to High(PhotoPts) do
+  { Same Stop-Clear-Load-Restart guard so the render thread cannot clobber the
+    freshly stitched cloud with the previous mesh's base points. }
+  WasActive := Active;
+  if WasActive then
   begin
-    PhotoPts[I].Position := TPoint3D.Create(PhotoPts[I].Position.X, PhotoPts[I].Position.Y - 60.0, PhotoPts[I].Position.Z);
-    FMeshResult.Points[Base + I] := PhotoPts[I];
+    Active := False;
+    Sleep(20);
   end;
-  FMeshResult.MorphTargets := nil;
-  FMeshResult.VertexFrames := nil;
-  FMeshResult.MeshNames := nil;
-  FMeshBase := Copy(FMeshResult.Points);
-  FMeshScale := 1.0;
-  FMeshFlipY := True;
-  FSourceType := srcHybrid;
-  SetLength(FMorphWeights, 0);
-  FActiveSequence := -1;
-  FAnimTime := 0;
-  if FHoloStyle = hsClassic then
-    FHoloStyle := hsCyber;
-  if FGLReady then
-  begin
-    BuildMeshTargets(FMeshResult.Points);
-    { Wipe stale positions and restart the spawn animation so the previous
-      mesh/photo cloud cannot bleed through as a morphing mix. }
-    ReinitParticlesForForming;
-    FState := csForming;
-    FBuildScanY := FMinY;
-    FDespawnScanY := FMinY;
+  try
+    MeshOpt := TMeshLoadOptions.Default;
+    MeshOpt.TargetRadius := 180.0;
+    MeshOpt.Step := 1;
+    MeshOpt.MaxParticles := 90000;
+    MeshOpt.IncludeNames := FMeshIncludeNames;
+    MeshPts := TYutaniMeshLoader.LoadFromFile(AMeshFile, MeshOpt).Points;
+    PhotoOpt := TPhotoLoadOptions.Default;
+    PhotoOpt.TargetRadius := 90.0;
+    PhotoOpt.Step := 2;
+    PhotoOpt.MaxParticles := 30000;
+    PhotoPts := TYutaniPhotoTo3D.LoadFromFile(APhotoFile, PhotoOpt);
+    { Stitch the photo face onto the upper third of the mesh body. }
+    Base := Length(MeshPts);
+    SetLength(FMeshResult.Points, Base + Length(PhotoPts));
+    for I := 0 to Base - 1 do
+      FMeshResult.Points[I] := MeshPts[I];
+    for I := 0 to High(PhotoPts) do
+    begin
+      PhotoPts[I].Position := TPoint3D.Create(PhotoPts[I].Position.X, PhotoPts[I].Position.Y - 60.0, PhotoPts[I].Position.Z);
+      FMeshResult.Points[Base + I] := PhotoPts[I];
+    end;
+    FMeshResult.MorphTargets := nil;
+    FMeshResult.VertexFrames := nil;
+    FMeshResult.MeshNames := nil;
+    FMeshBase := Copy(FMeshResult.Points);
+    FMeshScale := 1.0;
+    FMeshFlipY := True;
+    FSourceType := srcHybrid;
+    SetLength(FMorphWeights, 0);
+    FActiveSequence := -1;
+    FAnimTime := 0;
+    if FHoloStyle = hsClassic then
+      FHoloStyle := hsCyber;
+    FParticleCount := 0;
+    if FGLReady then
+    begin
+      BuildMeshTargets(FMeshResult.Points);
+      { Wipe stale positions and restart the spawn animation so the previous
+        mesh/photo cloud cannot bleed through as a morphing mix. }
+      ReinitParticlesForForming;
+      FState := csForming;
+      FBuildScanY := FMinY;
+      FDespawnScanY := FMinY;
+    end;
+  finally
+    if WasActive then
+      Active := True;
   end;
   NotifyActivity;
+end;
+
+procedure TSkChaos.ReloadCurrentSource;
+begin
+  { Re-loads the user's most recent mesh/photo pick with the current
+    StepFilter / ParticleBudget / MeshIncludeNames. Lets the controls panel
+    live-toggle body parts (and re-tune the budget) without remembering the
+    path itself. A depth-map source has no file-based reload path. }
+  if (FSourceType = srcMesh) and (FCurrentMeshFile <> '') then
+    LoadMeshFile(FCurrentMeshFile, Min(Width, Height) * 0.45, FStepFilter, FParticleBudget)
+  else if (FSourceType = srcPhoto) and (FCurrentPhotoFile <> '') then
+    LoadPhotoFile(FCurrentPhotoFile, Min(Width, Height) * 0.45, FStepFilter, FParticleBudget);
 end;
 
 procedure TSkChaos.SetMorphTargetWeight(const AName: string; AWeight: Single);
@@ -1999,7 +2126,10 @@ begin
   if not SameValue(FNeckPivotRatio, Value, 1e-4) then
   begin
     FNeckPivotRatio := EnsureRange(Value, 0.0, 1.0);
-    FPivotY := FMinY + (FMaxY - FMinY) * FNeckPivotRatio;
+    if FNeckPivotRatio <= 0.001 then
+      FPivotY := -9999.0
+    else
+      FPivotY := FMinY + (FMaxY - FMinY) * FNeckPivotRatio;
     NotifyActivity;
   end;
 end;
