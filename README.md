@@ -49,7 +49,7 @@ Tested in transparent desktop overlay mode on Windows:
 | **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (120 FPS) | ~25 % | ~17 % | High-refresh stress test over transparent desktop |
 | **AMD Ryzen 7 5800X + RTX 2060 Super** | 30–40 FPS | ~3.0 % | **~1.5 % avg** | GPU stays at idle clock states |
 
-And yes, I even tested it on my legendary ASUS UX305CA (Intel Core m3 / HD 515) it runs at just 5% CPU / 4% GPU while active. Honestly, it's barely breaking a sweat lol.     
+And yes, I even tested it on my legendary ASUS UX305CA (Intel Core m3/HD 515) —5% CPU / 4% GPU while active. Task Manager itself uses almost that much, so he wasn't really impressed lol.     
          
 ---     
      
