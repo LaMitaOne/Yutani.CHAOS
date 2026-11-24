@@ -139,7 +139,7 @@ OpenGL 4.3 Compute Shaders, 3D holographic point clouds, and modern LLM/MCP agen
 
      
      
-**Yutani CHAOS - Complete Holographic AI Operating System Interface Skia4delphi VCL CPU version v0.1**
+**Yutani CHAOS - Complete Holographic AI Operating System Interface Skia4delphi VCL CPU version v0.2**
         
 <img width="299" height="280" alt="Unbenannt" src="https://github.com/user-attachments/assets/411e6bae-544c-4537-bd01-0b3ca14cf055" />
     
