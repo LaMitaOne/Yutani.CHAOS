@@ -1682,20 +1682,6 @@ var
   NewResult: TMeshLoadResult;
   WasActive: Boolean;
 begin
-  { STOP the render thread before touching any mesh/particle state. The
-    background thread's AdvanceMorphAnimation -> ApplyCurrentMorph path writes
-    FMeshResult.Points[I].Position := FMeshBase[I].Position every frame, so a
-    naive mid-frame LoadMeshFile gets clobbered the instant it returns - which
-    is exactly the "load a new mesh but only the particle count changes, the
-    cloud still looks like angelica" bug. Pausing + giving the thread one frame
-    to drain in-flight work, then swapping the data atomically and clearing the
-    particle buffer, guarantees the new mesh is what gets rendered next. }
-  WasActive := Active;
-  if WasActive then
-  begin
-    Active := False;        // sets FPaused := True; UpdateLogic stops
-    Sleep(20);              // let the render thread finish its current frame
-  end;
   try
     Opt := TMeshLoadOptions.Default;
     Opt.TargetRadius := ATargetRadius;
@@ -1737,11 +1723,7 @@ begin
       FDespawnScanY := FMinY;
     end;
   finally
-    { RESTART the render thread. Order matters: the thread checks Active again
-      on entry and ReinitParticlesForForming needs FGLReady + the rebuilt
-      targets already in place, so resume only after the swap above. }
-    if WasActive then
-      Active := True;
+     //...
   end;
   NotifyActivity;
 end;
