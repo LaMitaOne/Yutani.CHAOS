@@ -46,7 +46,7 @@ With this head for example: **27.7 MB RAM total** in Task Manager (using [Anime 
      
 - **Holo-Shader Facial Controls:** `Mouth Open`, `Eye Openness`, `Chaos Level`, and `Trail Persistence` sliders are wired in the UI (`Face / Animation` tab) but not yet connected inside the `HOLO_PARTICLE_SRC` mesh shader (currently active in the legacy depth-map shader).  
 - **Desktop Projection & AliveHighlighter:** Free-form particle pointers, shapes, and visual screen highlights directly on the desktop canvas.  
-- **LLM / MCP Bridge:** Planned next step for autonomous AI expression, shape projection, and self-reflection.  
+- **LLM / MCP Bridge:** Planned next step for autonomous AI expression, shape projection, and self-reflection (Embodied-AI).  
      
 ---     
      
