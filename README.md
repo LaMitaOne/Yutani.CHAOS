@@ -13,8 +13,10 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
 <img width="371" height="482" alt="Ussnbenannt" src="https://github.com/user-attachments/assets/9cd3a67a-36b1-4798-99f6-84b5b6610136" />
      
 [Anime Head Base Mesh](https://sketchfab.com/3d-models/anime-head-base-mesh-58e291934379438584012d09faefedf6) by MarFab   
-     
-Sample Video v0.4: https://youtu.be/sGEjN7L1UJA       
+   
+Sample Videos:    
+v0.41: https://youtube.com/shorts/KJQ-Pby8XWk     
+v0.4:  https://youtu.be/sGEjN7L1UJA         
     
 ---
 <img width="371" height="432" alt="Unbenannt" src="https://github.com/user-attachments/assets/b52735b0-f786-4be4-8019-9972f29dcf72" />      
