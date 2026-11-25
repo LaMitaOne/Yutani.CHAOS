@@ -1,4 +1,4 @@
-# Yutani C.H.A.O.S. – GPU Edition  v0.4
+# Yutani C.H.A.O.S. – GPU Edition  v0.41
 **Complete Holographic AI Operating System**  
      
 **An ultra-lightweight, GPU-accelerated 3D holographic AI desktop overlay written in Delphi (FireMonkey + Skia4Delphi + OpenGL 4.3 Compute Shaders).**  
@@ -7,16 +7,14 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
      
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LaMitaOne/Yutani.CHAOS)  
        
-<img width="821" height="33" alt="Unbenannt" src="https://github.com/user-attachments/assets/ca98dbe8-8cc6-4080-a9e2-919dff901072" />
-         
+<img width="371" height="482" alt="Ussnbenannt" src="https://github.com/user-attachments/assets/9cd3a67a-36b1-4798-99f6-84b5b6610136" />
+     
+[Anime Head Base Mesh](https://sketchfab.com/3d-models/anime-head-base-mesh-58e291934379438584012d09faefedf6) by MarFab   
+     
 Sample Video v0.4: https://youtu.be/sGEjN7L1UJA       
+    
 ---
-
- 
-<img width="223" height="246" alt="5" src="https://github.com/user-attachments/assets/32855814-4f17-49eb-87bb-89a0c23e4d1c" />
-      
-[Anime Head Base Mesh](https://sketchfab.com/3d-models/anime-head-base-mesh-58e291934379438584012d09faefedf6) by MarFab    
-         
+<img width="371" height="432" alt="Unbenannt" src="https://github.com/user-attachments/assets/b52735b0-f786-4be4-8019-9972f29dcf72" />      
 <img width="269" height="276" alt="6" src="https://github.com/user-attachments/assets/eaac83db-ad01-4319-b007-87f8680cc236" />
 <img width="271" height="196" alt="4" src="https://github.com/user-attachments/assets/8aa2b22d-162b-4153-9fda-4e1674daa602" />
 <img width="232" height="246" alt="3" src="https://github.com/user-attachments/assets/1220901b-aa54-4c08-a20c-abe9bde5d7e9" />
@@ -28,21 +26,21 @@ Sample Video v0.4: https://youtu.be/sGEjN7L1UJA
      
 - **100% GPU Particle Simulation & Splatting:** Spring-damper physics, 3D perspective projection, normal-based rim lighting, volumetric depth shading, and soft radial glow splatting executed directly inside OpenGL 4.3 Compute Shaders (`SSBO` + coherent `imageLoad`/`imageStore`).  
 - **Zero-Dependency 3D Mesh Loader (`.glb` & `.obj`):** Parses binary glTF 2.0 scene hierarchies (`nodes` + `TRS`/`matrix` transforms), extracts normals, supports interactive per-part sub-mesh filtering (hair, eyes, glasses, armor, internal parts), body-part classification, and glTF morph targets / vertex-frame animations.  
+- **5 Distinct Hologram Shader Styles & 2D-to-3D Photo Mode:** Switch live between **Hologram** (classic scanlines & rim glow), **Android Circuit** (procedural circuit traces, vias & traveling data pulses), **Cyber Matrix** (vertical digital streams), **Blueprint** (topographic 3D contour grid), **Solid** (dense shaded 3D surface), and **Photo** (`PNG`/`JPG` luma-to-depth + Sobel normal estimation) modes.  
+- **Dual-Mesh Inner Core / Brain System:** Load any independent `.glb` / `.obj` mesh (such as a multi-lobe brain or sci-fi energy core) inside the outer head with dedicated scale, vertical offset, particle budget, per-lobe coloring, and separate outer vs. inner shader appearance parameters (`Glow`, `Particle Size`, `Softness`, `Rim Power`).  
+- **Live Per-Part Custom Coloring & Eye Dim-Blink:** Tint every outer or inner sub-mesh independently at runtime without reloading the model, paired with automatic eye sub-mesh detection for smooth eased dim-blinking and jaw-hinge speech animation.  
 - **Anatomical Neck-Pivot & Rigid Head Mouse Tracking:** Smoothly tracks the global cursor position (`GetCursorPos`) with spring-damped inertia and a `smoothstep` neck pivot—turning and nodding the head naturally while keeping shoulders steady, or switching to `0.00 (OFF)` for distortion-free rigid rotation on floating heads and skulls.  
-- **Switchable Hologram Styles & 2D-to-3D Photo Mode:** Live switching between **Classic**, **Cyber** (accent rim-lighting), **Volumetric** (optional pulsating inner brain-core), and **Photo** (`PNG`/`JPG` luma-to-depth + Sobel normal estimation) modes.  
-- **True Per-Pixel Desktop Transparency:** Renders premultiplied-alpha frames via zero-copy dual-PBO readback onto a borderless, transparent, click-through (`WS_EX_TRANSPARENT`) FireMonkey layered window with optional `StayOnTop` toggle.  
-- **Full Lifecycle Scanline Animations:** Includes holographic top-to-bottom build-up (`Spawn`), organic idle hover, and gravity-driven tear-down (`Despawn` + graceful `QuitAfterDespawn` on exit).  
-- **Tabbed Runtime Control Panel & Native System Tray:** Features a compact, HD-screen-friendly tabbed cockpit (`uControls` with dedicated `Appearance / Shader`, `Mesh & Sources`, `Photo`, `Face / Animation`, and `System / Performance` tabs) and a dependency-free Win32 `Shell_NotifyIconW` system tray menu (`uAppTray`).  
-- **Adaptive Idle-FPS Pacing:** Automatically runs at high frame rates during speech, morphing, or animation (`ActiveTargetFPS`) and throttles down after a configurable silence timeout (`IdleTargetFPS`) to keep laptop fans silent.  
-- **Ready for AI & Agent Integration (Roadmap):** Built around target-coordinate particle morphing (`tx, ty, tz`), allowing LLMs / AI agents via API/MCP to control expressions, look in a "mirror" (`look_in_mirror`), and **draw pointers, shapes, and visual highlights directly on the user's desktop**.  
+- **True Per-Pixel Desktop Transparency, Live Resize & Dragging:** Renders premultiplied-alpha frames via zero-copy dual-PBO readback onto a borderless, transparent, click-through (`WS_EX_TRANSPARENT`) FireMonkey layered window with interactive mouse dragging, corner snapping, live avatar resizing, and an integrated organic Skia screen highlighter (`uSkiaAliveHighlighter`).  
+- **Per-Mesh & Startup Auto-Presets:** Automatically saves and restores complete per-head setups (`presets\<Folder>_<Mesh>.ini` + `last.ini` startup index) including outer & inner meshes, all per-part colors/visibility, hologram style, appearance settings, blink timing, avatar size, screen position, and drag mode.  
+- **Full Lifecycle Scanline Animations & Adaptive FPS:** Includes holographic top-to-bottom build-up (`Spawn`), organic idle hover, gravity-driven tear-down (`Despawn`), and automatic `ActiveTargetFPS` / `IdleTargetFPS` throttling to keep laptop fans silent.  
+- **Tabbed Runtime Control Panel & Native System Tray:** Features a compact, HD-screen-friendly tabbed cockpit (`uControls` with `Appearance / Shader`, `Mesh & Sources`, `Inner Core / Brain`, `Photo`, `Face / Animation`, `Desktop Overlay`, and `System / Performance` tabs) and a dependency-free Win32 `Shell_NotifyIconW` system tray menu (`uAppTray`).  
      
 ---     
      
-## 🚧 Work in Progress / Experimental  
+## 🚧 Work in Progress / Roadmap  
      
-- **Holo-Shader Facial Controls:** `Mouth Open`, `Eye Openness`, `Chaos Level`, and `Trail Persistence` sliders are wired in the UI (`Face / Animation` tab) but not yet connected inside the `HOLO_PARTICLE_SRC` mesh shader (currently active in the legacy depth-map shader).  
-- **Desktop Projection & AliveHighlighter:** Free-form particle pointers, shapes, and visual screen highlights directly on the desktop canvas.  
-- **LLM / MCP Bridge:** Planned next step for autonomous AI expression, shape projection, and self-reflection (Embodied-AI).  
+- **LLM / MCP & TTS Integration:** Connecting an OpenAI-compatible / local LLM API + speech output so the avatar autonomously drives lip-sync (`MouthOpen`), emotions, style switches, and desktop highlights (`TAliveHighlighter`).  
+- **Extended Facial Expressions:** Further refining mouth lip-separation and emotion-driven brow/cheek poses across all five shader styles.  
      
 ---     
      
@@ -52,7 +50,7 @@ Tested in transparent desktop overlay mode on Windows:
      
 | Hardware Setup | Mode / FPS | CPU Usage | GPU Usage | Notes |
 | :--- | :---: | :---: | :---: | :--- |
-| **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (~38 FPS) | **~2.5 % – 4.5 %** | **~1.4 % – 2.5 %** | Thin & light laptop, completely silent / no fan spin-up |
+| **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (~38–60 FPS) | **~2.5 % – 5.0 %** | **~1.4 % – 2.5 %** | Thin & light laptop, completely silent / no fan spin-up |
 | **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (120 FPS) | ~25 % | ~17 % | High-refresh stress test over transparent desktop |
 | **AMD Ryzen 7 5800X + RTX 2060 Super** | 30–40 FPS | ~3.0 % | **~1.5 % avg** | GPU stays at idle clock states |
 
@@ -62,17 +60,36 @@ Tested in transparent desktop overlay mode on Windows:
      
 ## 🧩 Project Architecture  
      
-- `Yutani.Chaos.Skia.GPU.pas` — Offscreen OpenGL 4.3 context, compute shaders (`PARTICLE_SRC`, `HOLO_PARTICLE_SRC`, `CLEAR_SRC`, `BLUR_SRC`), dual-PBO readback, and `TSkChaos` component.  
+- `Yutani.Chaos.Skia.GPU.pas` — Offscreen OpenGL 4.3 context, compute shaders (`PARTICLE_SRC`, `HOLO_PARTICLE_SRC`, `CLEAR_SRC`, `BLUR_SRC`), dual-PBO readback, preset serialization, and `TSkChaos` component.  
 - `Yutani.MeshLoader.pas` — Zero-dependency `.glb` (glTF 2.0) and `.obj` parser with scene-graph transforms, sub-mesh filtering, normal calculation, and blend-shape support.  
 - `Yutani.PhotoTo3D.pas` — 2D portrait-to-3D point-cloud pipeline with Sobel depth-gradient normals and hybrid stitching.  
 - `uSkiaCustomThreadedBase.pas` — High-precision QPC background render thread with hybrid `Sleep`/spin-wait pacing, `RealFPS` counter, and Adaptive Idle-FPS controller.  
-- `uControls.pas` — Runtime-generated tabbed control form (`Appearance / Shader`, `Mesh & Sources`, `Photo`, `Face / Animation`, `System / Performance`).  
+- `uSkiaAliveHighlighter.pas` — Organic Skia energy-trail screen highlighter driven directly from the overlay canvas.  
+- `uControls.pas` — Runtime-generated tabbed control form (`Appearance / Shader`, `Mesh & Sources`, `Inner Core / Brain`, `Photo`, `Face / Animation`, `Desktop Overlay`, `System / Performance`).  
 - `uAppTray.pas` — Standalone Win32 notification-area icon and popup menu wrapper for FireMonkey.  
 - `Unit1.pas` — Transparent, click-through desktop host window.  
      
 ---
     
 ## 📝 Changelog
+
+### v0.41 — Hologram Styles, Dual-Mesh Brain Core, Per-Part Colors & Full Preset Persistence
+
+#### Visual Styles & Compute Shader
+- **5 Distinct Hologram Styles:** Upgraded the shader pipeline to five distinct visual modes (`Hologram`, `Android Circuit` with traveling data pulses and vias, `Cyber Matrix` vertical digital streams, `Blueprint` topographic contour grid, and `Solid` dense shaded 3D surface).
+- **Per-Part Custom Coloring:** Added live per-submesh color pickers in the `Parts` tab so individual mesh groups (eyes, hair, armor, brain lobes, etc.) can be tinted independently in real time without reloading the mesh.
+- **Smooth Eye Dim-Blink & Configurable Timing:** Replaced coordinate-based eyelid distortion with automatic eye submesh detection and smooth eased brightness dimming, plus runtime sliders for blink interval and blink speed.
+- **Refined Jaw-Hinge Kinematics:** Replaced vertical chin stretching with anatomically anchored jaw-pivot rotation and a localized speech-energy wave along the lip slit.
+
+#### Independent Inner Core / Brain System
+- **Dedicated `Inner Core / Brain` Tab:** Load any separate `.glb` / `.obj` mesh (such as a multi-lobe brain or energy core) inside the outer hologram head with adjustable scale, vertical offset, and particle budget.
+- **Per-Part Inner Core Colors:** Tint individual sub-meshes of the inner core independently (e.g. separate colors per brain lobe).
+- **Separate Outer vs. Inner Appearance Controls:** Added a target switcher (`Head / Outer` vs. `Brain / Inner Core`) in the `Appearance / Shader` tab so `Glow`, `Particle Size`, `Softness`, and `Rim Power` can be tuned independently without over-brightening behind the eyes.
+
+#### Desktop Overlay, Highlighter & Save/Load Presets
+- **Interactive Dragging, Snapping & Live Resize:** Added a new `Desktop Overlay` tab with persistent mouse-drag positioning (`Drag avatar with mouse`), one-click `Snap Bottom-Left` / `Snap Bottom-Right` buttons, and live `Avatar size` scaling.
+- **Per-Mesh & Named Presets (`Save / Load`):** Added automatic per-head preset saving/loading (`presets\<Folder>_<Mesh>.ini`) as well as `Save preset as...` and `Load preset...` dialogs—persisting outer & inner meshes, all per-part colors & visibility, hologram style, outer/inner appearance settings, blink timing, avatar size, screen position, and drag mode.
+
 
 ### v0.4 — Sub-Mesh Selection & Neck-Pivot *(or the "Added Mesh Sources in README 'Cause You'll Need Them" Update :D)*
     
