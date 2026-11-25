@@ -68,8 +68,8 @@ Tested in transparent desktop overlay mode on Windows:
 - `uControls.pas` — Runtime-generated tabbed control form (`Appearance / Shader`, `Mesh & Sources`, `Inner Core / Brain`, `Photo`, `Face / Animation`, `Desktop Overlay`, `System / Performance`).  
 - `uAppTray.pas` — Standalone Win32 notification-area icon and popup menu wrapper for FireMonkey.  
 - `Unit1.pas` — Transparent, click-through desktop host window.  
-     
----
+    
+---    
     
 ## 📝 Changelog
 
@@ -120,7 +120,16 @@ Want to try more heads right away? Drop any `.glb` or `.obj` into your mesh fold
 * https://sketchfab.com/3d-models/futuristic-robot-head-a-futuristic-robot-head-da0a453250994ee8a9d99fd4040995f3
     
 ---
-     
+
+includes:   
+-Skia CustomThreadedBase https://github.com/LaMitaOne/SkiaCustomThreadedBase       
+-uSkiaAliveHighlighter out of https://github.com/LaMitaOne/skia-flowmotion       
+and some day maybe...     
+-Skia GPU Alive Particle Components     
+https://github.com/LaMitaOne/Skia-GPU-Alive-Particle-Components     
+    
+---
+
 ## 📜 3D Asset Credits  
      
 Bundled demo `.glb` models tested with this project (see `MODEL_CREDITS.txt` for full Creative Commons license details):  
