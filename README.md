@@ -26,9 +26,10 @@ v0.41: https://youtube.com/shorts/KJQ-Pby8XWk
 v0.4:  https://youtu.be/sGEjN7L1UJA         
     
 ---
-<img width="371" height="432" alt="Unbenannt" src="https://github.com/user-attachments/assets/b52735b0-f786-4be4-8019-9972f29dcf72" />      
+<img width="371" height="432" alt="Unbenannt" src="https://github.com/user-attachments/assets/b52735b0-f786-4be4-8019-9972f29dcf72" />  
+<img width="435" height="558" alt="Unbenannt" src="https://github.com/user-attachments/assets/d64a8d8c-3032-4411-8154-9ee5ee01cf28" />
+
 <img width="269" height="276" alt="6" src="https://github.com/user-attachments/assets/eaac83db-ad01-4319-b007-87f8680cc236" />
-<img width="271" height="196" alt="4" src="https://github.com/user-attachments/assets/8aa2b22d-162b-4153-9fda-4e1674daa602" />
 <img width="232" height="246" alt="3" src="https://github.com/user-attachments/assets/1220901b-aa54-4c08-a20c-abe9bde5d7e9" />
 <img width="204" height="242" alt="2" src="https://github.com/user-attachments/assets/e9ab4dc1-cbe2-4545-b0cc-a4955bae6757" />
 <img width="229" height="256" alt="1" src="https://github.com/user-attachments/assets/2fc400e7-18f9-4fc5-b3b3-47c2c4bd0a8f" />
