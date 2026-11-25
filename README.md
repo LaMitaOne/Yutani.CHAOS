@@ -155,10 +155,10 @@ OpenGL 4.3 Compute Shaders, 3D holographic point clouds, and modern LLM/MCP agen
       
 <img width="371" height="201" alt="Unbenannt" src="https://github.com/user-attachments/assets/4cd6a3a4-91ee-4fdb-9880-a9673669f222" />
 
+     
 
-
-
-
+🖥️ Finally, a real purpose for those tiny secondary screens built into laptops (ThinkBook Plus, ZenBook ScreenPad & co.)        
+      
             
 -------------------------------------------------------------------------------------------------------------
 
