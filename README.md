@@ -71,6 +71,11 @@ Tested in transparent desktop overlay mode on Windows:
 - `uControls.pas` — Runtime-generated tabbed control form (`Appearance / Shader`, `Mesh & Sources`, `Inner Core / Brain`, `Photo`, `Face / Animation`, `Desktop Overlay`, `System / Performance`).  
 - `uAppTray.pas` — Standalone Win32 notification-area icon and popup menu wrapper for FireMonkey.  
 - `Unit1.pas` — Transparent, click-through desktop host window.  
+      
+
+🖥️ Finally, a real purpose for those tiny secondary screens built into laptops (ThinkBook Plus, ZenBook ScreenPad & co.)        
+           
+
     
 ---    
     
@@ -93,8 +98,8 @@ Tested in transparent desktop overlay mode on Windows:
 #### Desktop Overlay, Highlighter & Save/Load Presets
 - **Interactive Dragging, Snapping & Live Resize:** Added a new `Desktop Overlay` tab with persistent mouse-drag positioning (`Drag avatar with mouse`), one-click `Snap Bottom-Left` / `Snap Bottom-Right` buttons, and live `Avatar size` scaling.
 - **Per-Mesh & Named Presets (`Save / Load`):** Added automatic per-head preset saving/loading (`presets\<Folder>_<Mesh>.ini`) as well as `Save preset as...` and `Load preset...` dialogs—persisting outer & inner meshes, all per-part colors & visibility, hologram style, outer/inner appearance settings, blink timing, avatar size, screen position, and drag mode.
-
-
+      
+  
 ### v0.4 — Sub-Mesh Selection & Neck-Pivot *(or the "Added Mesh Sources in README 'Cause You'll Need Them" Update :D)*
     
 #### Features & UI
@@ -156,9 +161,6 @@ OpenGL 4.3 Compute Shaders, 3D holographic point clouds, and modern LLM/MCP agen
 <img width="371" height="201" alt="Unbenannt" src="https://github.com/user-attachments/assets/4cd6a3a4-91ee-4fdb-9880-a9673669f222" />
 
      
-
-🖥️ Finally, a real purpose for those tiny secondary screens built into laptops (ThinkBook Plus, ZenBook ScreenPad & co.)        
-      
             
 -------------------------------------------------------------------------------------------------------------
 
