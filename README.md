@@ -73,7 +73,7 @@ Tested in transparent desktop overlay mode on Windows:
 - `Unit1.pas` — Transparent, click-through desktop host window.  
       
 
-🖥️ Finally, a real purpose for those tiny secondary screens built into laptops (ThinkBook Plus, ZenBook ScreenPad & co.)        
+🖥️ Finally, a real purpose for those tiny secondary screens built into laptops (ThinkBook Plus Gen3, ZenBook ScreenPad & co.)        
            
 
     
