@@ -3,7 +3,7 @@ unit uAppTray;
 { Windows notification-area (tray) icon with a popup menu for the Yutani
   Chaos avatar.
 
-  - Right-click opens a menu: a "Mode" submenu with the four HoloStyle modes,
+  - Right-click opens a menu: a "Mode" submenu with the five HoloStyle modes,
     "Show controls" to surface Form2, and "Exit" to quit.
   - Left-click shows the controls form directly.
 
@@ -48,10 +48,11 @@ uses
 
 const
   TRAYWND_CLASS = 'YutaniChaosTrayWnd';
-  IDM_MODE_CLASSIC = 1001;
-  IDM_MODE_CYBER = 1002;
-  IDM_MODE_VOLUME = 1003;
-  IDM_MODE_PHOTO = 1004;
+  IDM_MODE_HOLOGRAM = 1001;
+  IDM_MODE_CIRCUIT = 1002;
+  IDM_MODE_CYBER = 1003;
+  IDM_MODE_BLUEPRINT = 1004;
+  IDM_MODE_SOLID = 1005;
   IDM_CONTROLS = 1010;
   IDM_EXIT = 1011;
   IDM_SPAWN = 1012;
@@ -178,10 +179,11 @@ var
 begin
   hXMenu := CreatePopupMenu;
   hSub := CreatePopupMenu;
-  AppendMenuW(hSub, MF_STRING, IDM_MODE_CLASSIC, PChar('Classic'));
-  AppendMenuW(hSub, MF_STRING, IDM_MODE_CYBER, PChar('Cyber'));
-  AppendMenuW(hSub, MF_STRING, IDM_MODE_VOLUME, PChar('Volumetric'));
-  AppendMenuW(hSub, MF_STRING, IDM_MODE_PHOTO, PChar('Photo'));
+  AppendMenuW(hSub, MF_STRING or MenuCheck(Assigned(GChaos) and (GChaos.HoloStyle = hsHologram)), IDM_MODE_HOLOGRAM, PChar('Hologram'));
+  AppendMenuW(hSub, MF_STRING or MenuCheck(Assigned(GChaos) and (GChaos.HoloStyle = hsAndroidCircuit)), IDM_MODE_CIRCUIT, PChar('Android Circuit'));
+  AppendMenuW(hSub, MF_STRING or MenuCheck(Assigned(GChaos) and (GChaos.HoloStyle = hsCyberMatrix)), IDM_MODE_CYBER, PChar('Cyber Matrix'));
+  AppendMenuW(hSub, MF_STRING or MenuCheck(Assigned(GChaos) and (GChaos.HoloStyle = hsBlueprint)), IDM_MODE_BLUEPRINT, PChar('Blueprint'));
+  AppendMenuW(hSub, MF_STRING or MenuCheck(Assigned(GChaos) and (GChaos.HoloStyle = hsSolid)), IDM_MODE_SOLID, PChar('Solid'));
   AppendMenuW(hXMenu, MF_POPUP or MF_STRING, hSub, PChar('Mode'));
   AppendMenuW(hXMenu, MF_STRING, IDM_CONTROLS, PChar('Show controls'));
   AppendMenuW(hXMenu, MF_SEPARATOR, 0, nil);
@@ -208,18 +210,21 @@ begin
   if not Assigned(GChaos) then
     GChaos := FindChaos;
   case Cmd of
-    IDM_MODE_CLASSIC:
+    IDM_MODE_HOLOGRAM:
       if Assigned(GChaos) then
-        GChaos.HoloStyle := hsClassic;
+        GChaos.HoloStyle := hsHologram;
+    IDM_MODE_CIRCUIT:
+      if Assigned(GChaos) then
+        GChaos.HoloStyle := hsAndroidCircuit;
     IDM_MODE_CYBER:
       if Assigned(GChaos) then
-        GChaos.HoloStyle := hsCyber;
-    IDM_MODE_VOLUME:
+        GChaos.HoloStyle := hsCyberMatrix;
+    IDM_MODE_BLUEPRINT:
       if Assigned(GChaos) then
-        GChaos.HoloStyle := hsVolumetric;
-    IDM_MODE_PHOTO:
+        GChaos.HoloStyle := hsBlueprint;
+    IDM_MODE_SOLID:
       if Assigned(GChaos) then
-        GChaos.HoloStyle := hsPhoto;
+        GChaos.HoloStyle := hsSolid;
     IDM_CONTROLS:
       begin
         if not Assigned(Form2) then

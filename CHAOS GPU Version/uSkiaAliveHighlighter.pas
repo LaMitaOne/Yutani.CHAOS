@@ -87,7 +87,7 @@ type
     FBounds: TRectF;          // Screen boundaries (Width/Height)
     FSavedNormalColor: TAlphaColor; // Stores the user's set color persistently
     FCollisionEnabled: Boolean;
-    FStuckCounter: Integer; // Zählt, wie oft er am selben Hindernis klebt
+    FStuckCounter: Integer; // Zï¿½hlt, wie oft er am selben Hindernis klebt
 
     { Physics & AI Core }
     procedure UpdatePhysics(DeltaTime: Single);

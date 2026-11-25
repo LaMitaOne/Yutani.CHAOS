@@ -42,10 +42,14 @@ begin
   Position := TFormPosition.Designed;
   FChaos := TSkChaos.Create(Self);
   FChaos.Parent := Self;
-  FChaos.Position.X := ClientWidth - 236 - 20;
-  FChaos.Position.Y := ClientHeight - 252 - 50;
-  FChaos.Width := 236;
-  FChaos.Height := 252;
+  if not FChaos.StartupPresetLoaded then
+  begin
+    FChaos.Position.X := ClientWidth - 236 - 20;
+    FChaos.Position.Y := ClientHeight - 252 - 50;
+    FChaos.Width := 236;
+    FChaos.Height := 252;
+  end;
+
   FChaos.Active := True;
   { Publish the live avatar to the control panel + tray menu so they do not
     have to fall back to the recursive FindChaos scan. }
