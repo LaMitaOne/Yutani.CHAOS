@@ -85,6 +85,7 @@ Tested in transparent desktop overlay mode on Windows:
 - **Dedicated `Inner Core / Brain` Tab:** Load any separate `.glb` / `.obj` mesh (such as a multi-lobe brain or energy core) inside the outer hologram head with adjustable scale, vertical offset, and particle budget.
 - **Per-Part Inner Core Colors:** Tint individual sub-meshes of the inner core independently (e.g. separate colors per brain lobe).
 - **Separate Outer vs. Inner Appearance Controls:** Added a target switcher (`Head / Outer` vs. `Brain / Inner Core`) in the `Appearance / Shader` tab so `Glow`, `Particle Size`, `Softness`, and `Rim Power` can be tuned independently without over-brightening behind the eyes.
+- (sounds strange but... Brain u can find here one lol https://sketchfab.com/3d-models/brain-project-24ec03412dd8432bb0d3e750a72608e0)    
 
 #### Desktop Overlay, Highlighter & Save/Load Presets
 - **Interactive Dragging, Snapping & Live Resize:** Added a new `Desktop Overlay` tab with persistent mouse-drag positioning (`Drag avatar with mouse`), one-click `Snap Bottom-Left` / `Snap Bottom-Right` buttons, and live `Avatar size` scaling.
