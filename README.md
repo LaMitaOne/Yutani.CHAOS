@@ -9,8 +9,9 @@
 Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs natively on Windows with virtually zero system overhead—making it ideal as an **always-on AI companion** and **interactive visual desktop canvas**.  
      
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LaMitaOne/Yutani.CHAOS)  
-       
-<img width="371" height="482" alt="Ussnbenannt" src="https://github.com/user-attachments/assets/9cd3a67a-36b1-4798-99f6-84b5b6610136" />
+     
+      
+<img width="631" height="626" alt="Unbenannt" src="https://github.com/user-attachments/assets/259fb660-3919-4576-8c8f-2a39fddffe42" />
       
 <img width="260" height="390" alt="b6pwb1" src="https://github.com/user-attachments/assets/d682b365-ae38-424a-a412-946e67bdbf4b" />
 
