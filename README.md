@@ -13,7 +13,8 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
       
 <img width="631" height="626" alt="Unbenannt" src="https://github.com/user-attachments/assets/259fb660-3919-4576-8c8f-2a39fddffe42" />
       
-Looking at this now… those 4 days of fighting with compute shaders before seeing the first pixel were absolutely worth it.    
+Looking at this now…   
+those 4 days of fighting with compute shaders before seeing the first pixel were absolutely worth it.    
      
 <img width="260" height="390" alt="b6pwb1" src="https://github.com/user-attachments/assets/d682b365-ae38-424a-a412-946e67bdbf4b" />
 
