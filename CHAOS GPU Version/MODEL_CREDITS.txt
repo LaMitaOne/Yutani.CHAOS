@@ -36,4 +36,23 @@ on Sketchfab.
 - Note:    Because this model is licensed under CC BY-NC-SA 4.0, any redistribution
            of this specific model asset must remain non-commercial and retain the
            same CC BY-NC-SA 4.0 license terms.
+
+--------------------------------------------------------------------------------
+4. Brain Project
+--------------------------------------------------------------------------------
+- Author:  Dean Lavery (@dean.lavery)
+- Source:  https://sketchfab.com/3d-models/brain-project-24ec03412dd8432bb0d3e750a72608e0
+- License: CC Attribution 4.0 International (CC BY 4.0)
+           https://creativecommons.org/licenses/by/4.0/
+- Changes: Converted/loaded dynamically into GPU particle coordinates at runtime
+           as an inner core / brain mesh with per-lobe custom coloring.
+
+--------------------------------------------------------------------------------
+5. Anime Head Base Mesh
+--------------------------------------------------------------------------------
+- Author:  MarFab (@d00lbum)
+- Source:  https://sketchfab.com/3d-models/anime-head-base-mesh-58e291934379438584012d09faefedf6
+- License: CC Attribution 4.0 International (CC BY 4.0)
+           https://creativecommons.org/licenses/by/4.0/
+- Changes: Converted/loaded dynamically into GPU particle coordinates at runtime.
 ================================================================================

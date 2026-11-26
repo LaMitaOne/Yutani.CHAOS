@@ -2150,7 +2150,7 @@ begin
     // Deferred SSBO upload: UploadSSBO only sets FSSBODirty on the UI thread.
     // The actual GL upload must happen here, while FGLContext is current,
     // otherwise glBufferSubData silently fails and the GPU keeps rendering
-    // the initial (Angelica) particle cloud no matter how often the CPU
+    // the initial (anime_head_base_mesh) particle cloud no matter how often the CPU
     // buffer changes.
   FDataLock.Enter;
   try
@@ -2964,7 +2964,7 @@ var
   ExePath: string;
   SR: TSearchRec;
 begin
-  { Default mesh at first start: angelica.glb directly next to the
+  { Default mesh at first start: anime_head_base_mesh.glb directly next to the
     executable or in its assets/ subfolder. If neither exists, fall back
     to the first .glb / .obj found beside the exe so any demo mesh loads
     regardless of filename; an empty result leaves the avatar in the
@@ -2972,10 +2972,10 @@ begin
     through the panel. }
   Result := '';
   ExePath := ExtractFilePath(ParamStr(0));
-  if FileExists(ExePath + 'angelica.glb') then
-    Exit(ExePath + 'angelica.glb');
-  if FileExists(ExePath + 'assets\angelica.glb') or FileExists(ExePath + 'assets/angelica.glb') then
-    Exit(ExePath + 'assets\angelica.glb');
+  if FileExists(ExePath + 'anime_head_base_mesh.glb') then
+    Exit(ExePath + 'anime_head_base_mesh.glb');
+  if FileExists(ExePath + 'assets\anime_head_base_mesh.glb') or FileExists(ExePath + 'assets/anime_head_base_mesh.glb') then
+    Exit(ExePath + 'assets\anime_head_base_mesh.glb');
   if FindFirst(ExePath + '*.glb', faAnyFile, SR) = 0 then
   try
     Result := ExePath + SR.Name;
