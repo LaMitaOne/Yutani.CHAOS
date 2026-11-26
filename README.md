@@ -22,6 +22,7 @@ those 4 days of fighting with compute shaders before seeing the first pixel were
 [Anime Head Base Mesh](https://sketchfab.com/3d-models/anime-head-base-mesh-58e291934379438584012d09faefedf6) by MarFab   
    
 Sample Videos:    
+v0.42: https://youtube.com/shorts/4EH4Bxa7Ly4      
 v0.41: https://youtube.com/shorts/KJQ-Pby8XWk     
 v0.4:  https://youtu.be/sGEjN7L1UJA         
     
