@@ -1,0 +1,58 @@
+# Yutani.CHAOS — Vision, Ideas & Community Roadmap
+
+This document outlines architectural ideas and future directions for **Yutani.CHAOS**. The core holographic GPU particle engine is already modular and self-contained — pull requests, external bridges, language ports, and experimental plugins are very welcome!
+
+---
+
+## 1. Subsumption Architecture (Reflexes Before Thinking)
+
+Instead of sending every tiny event to a cloud LLM, the avatar operates in three reactive layers:
+
+* **Layer 0 — Survival Reflexes (Local Delphi, 0 ms latency, zero API cost):**
+  * **Critical Battery (< 5–10%):** Automatically triggers **Alarm Mode**, points the `AliveHighlighter` toward the system battery icon, and initiates a safe Hibernate/Standby (checking for unsaved open windows first instead of forcing a hard shutdown).
+  * **Thermal / Load Protection:** Shifts particle color temperature slightly toward warm/red and throttles target FPS/particle budget under heavy CPU/GPU load.
+  * **Low Memory Guard:** Dynamically scales down particle budgets on 8 GB systems when free RAM drops below critical thresholds.
+
+* **Layer 1 — Environmental & System Instincts (`Yutani.SystemSenses.pas`):**
+  * **Startup Hygiene & Diagnostics:** Checks `%USERPROFILE%` / `%TEMP%` for problematic characters or OneDrive redirections, monitors free disk space, verifies the active OpenGL renderer (warning on software fallbacks like *Microsoft Basic Render Driver*), and tracks system uptime.
+  * **Context & Hardware Awareness:**
+    * *Fullscreen Detection (`SHQueryUserNotificationState`):* Automatically enters a non-intrusive Ghost/Idle mode during games, movies, or presentations.
+    * *Hardware Events (`WM_DEVICECHANGE`):* Reacts visually when USB drives, gamepads, audio interfaces, or external monitors are connected/disconnected.
+    * *Process Watchdog (`CreateToolhelp32Snapshot`):* Recognizes dev/3D tools (e.g. Delphi IDE, Blender) vs. suspicious high-CPU executables running out of `%TEMP%` (triggering Alarm Mode and displaying the path).
+
+* **Layer 2 — Cognitive AI Layer (On-Demand):**
+  * Receives a compact JSON snapshot of Layer 0 & 1 context only when user interaction or deeper reasoning is needed.
+
+---
+
+## 2. Universal, Zero-Cost & Offline-First AI / Voice Bridge
+
+* **Open Command Bridge:** Lightweight local IPC (Localhost HTTP / Named Pipe / `WM_COPYDATA`) accepting simple JSON commands (`spawn`, `despawn`, `alarm`, `style`, `eye_look`, `highlight`, `part_color`) so any external AI script or language can drive the avatar.
+* **OpenAI-Compatible REST Client (`/v1/chat/completions`):**
+  * Works out-of-the-box with free cloud tiers (Groq, Google AI Studio / Gemini, OpenRouter `:free`) as well as 100% local servers (**Ollama**, **LM Studio**, **llama.cpp**).
+* **Speech-to-Text (STT):**
+  * *Offline Default:* **Vosk** (lightweight real-time streaming wake-word & command recognition running in a separate worker process to keep the GL render thread untouched).
+  * *Optional:* **whisper.cpp** server or Groq Whisper API.
+* **Text-to-Speech (TTS) & Visual Output:**
+  * *Offline Default:* **Piper TTS** (fast neural ONNX voices played back via `MiniAudio4Delphi`), or **Edge-TTS** online.
+  * *Silent Visual Mode:* Morphing short responses directly as desktop particles (combining **Yutani.CHAOS** with [Skia-GPU-Alive-Particle-Components](https://github.com)).
+
+---
+
+## 3. Embedded Lua 5.4 Scripting & Self-Modification
+
+* **Runtime Brain (`lua54.dll` ~300 KB):** Exposes safe `chaos.*` bindings (`chaos.set_alarm`, `chaos.set_eye_look`, `chaos.highlight`, `chaos.set_part_color`, `chaos.get_system_info`, etc.) in a sandboxed VM (reusable for NPC AI in the Yutani Engine).
+* **Self-Extending Behavior:** The AI can write, hot-reload, and save new reactive micro-scripts inside a `scripts/` folder (e.g., folder watchers, custom light alerts, or automated routines) at runtime.
+
+---
+
+## 4. Physical Hardware & Room Sync
+
+* **OpenRGB Delphi SDK Wrapper:** Zero-dependency TCP client (`localhost:6742`) to sync PC, keyboard, mouse, and RAM LEDs with the avatar's state (e.g., pulsing red in Alarm Mode).
+* **WLED / ESP32 / Arduino (UDP Realtime / HTTP / Serial COM):** Sync room LED strips or drive pan/tilt servos and robotic arms in real time from `HeadLook` / `EyeLook` vectors.
+
+---
+
+## 5. Visual & Physics Upgrades
+
+* **Upper-Body / Bust Mode:** GPU compute-shader bone weights for breathing, shoulder motion, and procedural arm gestures, paired with a lightweight 12–16 node CPU spring-anchor grid for hair/cloth momentum.
