@@ -171,13 +171,14 @@ https://github.com/LaMitaOne/Skia-GPU-Alive-Particle-Components
     
 ---
 
-## 📜 3D Asset Credits  
+## 📜 3D Asset Credits     
      
-Bundled demo `.glb` models tested with this project (see `MODEL_CREDITS.txt` for full Creative Commons license details):  
-- **Angelica** by *DarkNik* (CC BY 4.0)  
-- **Procedural female scifi armor test 3** by *ghostnoface* (CC BY 4.0)  
-- **Scifi Girl v.01** by *patrix* (CC BY-NC-SA 4.0)
-    
+Bundled demo `.glb` models tested with this project (see `MODEL_CREDITS.txt` for full Creative Commons license details):     
+- **Angelica** by *DarkNik* (CC BY 4.0)     
+- **Procedural female scifi armor test 3** by *ghostnoface* (CC BY 4.0)      
+- **Scifi Girl v.01** by *patrix* (CC BY-NC-SA 4.0)    
+- **Brain Project** by *Dean Lavery* (CC BY 4.0)    
+- **Anime Head Base Mesh** by *MarFab* (CC BY 4.0)     
        
 ## 🕰️ Origin Story (2009 ➡️ 2026)      
       
