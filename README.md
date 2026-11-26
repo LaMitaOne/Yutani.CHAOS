@@ -66,8 +66,10 @@ Tested in transparent desktop overlay mode on Windows:
 | **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (~38–60 FPS) | **~2.5 % – 5.0 %** | **~1.4 % – 2.5 %** | Thin & light laptop, completely silent / no fan spin-up |
 | **AMD Ryzen 5 4500U** (Vega 6 iGPU) | 3D Mesh (120 FPS) | ~25 % | ~17 % | High-refresh stress test over transparent desktop |
 | **AMD Ryzen 7 5800X + RTX 2060 Super** | 30–40 FPS | ~3.0 % | **~1.5 % avg** | GPU stays at idle clock states |
-
-*And yes, I even tested it on my legendary **ASUS UX305CA (Intel Core m3 / HD 515)**—it runs at just **5% CPU / 4% GPU** while active (barely more than Windows Task Manager itself uses). Honestly, he wasn't very impressed lol.*
+     
+*And yes, I even tested it on my legendary **ASUS UX305CA (Intel Core m3 / HD 515)**—it runs at just **5% CPU / 4% GPU** while active (barely more than Windows Task Manager itself uses). Honestly, he wasn't very impressed lol.*        
+       
+Depends on loaded meshs, max particles, size, fps, etc settings sure too a lot.      
      
 ---     
      
