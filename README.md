@@ -1,10 +1,10 @@
 # Yutani C.H.A.O.S. – GPU Edition  v0.42
-**Complete Holographic AI Operating System**  
-     
+           
 > 😼😵‍💫 *Waves hand* — You want to click on that **⭐ Star** button... you really want to click on that star...       
 > *Damn, the Force doesn't work online :P*     
        
 **An ultra-lightweight, GPU-accelerated 3D holographic AI desktop overlay written in Delphi (FireMonkey + Skia4Delphi + OpenGL 4.3 Compute Shaders).**  
+**Complete Holographic AI Operating System (some day)**  
      
 Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs natively on Windows with virtually zero system overhead—making it ideal as an **always-on AI companion** and **interactive visual desktop canvas**.  
      
