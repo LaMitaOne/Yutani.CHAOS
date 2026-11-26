@@ -2296,7 +2296,7 @@ begin
     re-entering cursor starts from a calm field. MouseForceField = False
     takes the same outside path unconditionally - no velocity tracking,
     no per-frame state updates, the shader branch never fires. }
-  if FMouseForceField and CurValid and (Local.X >= 0) and (Local.Y >= 0) and (Local.X < FControlW) and (Local.Y < FControlH) then
+  if FMouseForceField and (not FDragging) and CurValid and (Local.X >= 0) and (Local.Y >= 0) and (Local.X < FControlW) and (Local.Y < FControlH) then
   begin
     NewLocalX := Local.X * (FBufW / Max(FControlW, 1));
     NewLocalY := Local.Y * (FBufH / Max(FControlH, 1));
@@ -3932,6 +3932,11 @@ begin
   inherited MouseMove(Shift, X, Y);
   if FDragging then
   begin
+    if (GetAsyncKeyState(VK_LBUTTON) and $8000) = 0 then
+    begin
+      FDragging := False;
+      Exit;
+    end;
     NewX := FDragStartPos.X + (X + Position.X - FDragStartMouse.X);
     NewY := FDragStartPos.Y + (Y + Position.Y - FDragStartMouse.Y);
     ClampIntoParent(NewX, NewY);
