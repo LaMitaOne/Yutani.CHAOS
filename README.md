@@ -1,4 +1,4 @@
-# Yutani C.H.A.O.S. – GPU Edition  v0.41
+# Yutani C.H.A.O.S. – GPU Edition  v0.42
 **Complete Holographic AI Operating System**  
      
 > 😼😵‍💫 *Waves hand* — You want to click on that **⭐ Star** button... you really want to click on that star...       
@@ -26,34 +26,32 @@ v0.41: https://youtube.com/shorts/KJQ-Pby8XWk
 v0.4:  https://youtu.be/sGEjN7L1UJA         
     
 ---
-<img width="371" height="432" alt="Unbenannt" src="https://github.com/user-attachments/assets/b52735b0-f786-4be4-8019-9972f29dcf72" />  
-<img width="435" height="558" alt="Unbenannt" src="https://github.com/user-attachments/assets/d64a8d8c-3032-4411-8154-9ee5ee01cf28" />
 
-<img width="269" height="276" alt="6" src="https://github.com/user-attachments/assets/eaac83db-ad01-4319-b007-87f8680cc236" />
-<img width="232" height="246" alt="3" src="https://github.com/user-attachments/assets/1220901b-aa54-4c08-a20c-abe9bde5d7e9" />
-<img width="204" height="242" alt="2" src="https://github.com/user-attachments/assets/e9ab4dc1-cbe2-4545-b0cc-a4955bae6757" />
-<img width="229" height="256" alt="1" src="https://github.com/user-attachments/assets/2fc400e7-18f9-4fc5-b3b3-47c2c4bd0a8f" />
+<img width="658" height="552" alt="Unbenannt" src="https://github.com/user-attachments/assets/c8d77d6d-e47f-4c69-8baf-b1d659d2362d" />
+          
+## ✨ Key Features      
+    
+- **100% GPU Particle Simulation & Splatting:** Spring-damper physics, 3D perspective projection, normal-based rim lighting, volumetric depth shading, and soft radial glow splatting executed directly Inside OpenGL 4.3 Compute Shaders (`SSBO` + coherent `imageLoad`/`imageStore`).   
+- **Interactive 3D Cursor Force-Field (`MouseForceField`):** Passing the mouse cursor through the hologram radially displaces, swirls, and gently depresses particles in 3D depth before smoothly springing them back into shape—working seamlessly even in full click-through mode.
+- **Organic Liveliness (`IdleLifeMotion` & `NaturalBlinking`):** Combines global cursor tracking (`GetCursorPos`) with multi-frequency idle breathing drift, subtle saccadic micro-glances when the cursor is stationary, and randomized natural blink intervals with occasional double-blinks.   
+- **Zero-Dependency 3D Mesh Loader (`.glb` & `.obj`):** Parses binary glTF 2.0 scene hierarchies (`nodes` + `TRS`/`matrix` transforms), extracts normals, supports interactive per-part sub-mesh filtering (hair, eyes, glasses, armor, internal parts), body-part classification, and glTF morph targets / vertex-frame animations.   
+- **5 Distinct Hologram Shader Styles & 2D-to-3D Photo Mode:** Switch live between **Hologram** (classic scanlines & rim glow), **Android Circuit** (procedural circuit traces, vias & traveling data pulses), **Cyber Matrix** (vertical digital streams), **Blueprint** (topographic 3D contour grid), **Solid** (dense shaded 3D surface), and **Photo** (`PNG`/`JPG` luma-to-depth + Sobel normal estimation) modes.   
+- **Dual-Mesh Inner Core / Brain System with Instant Updates:** Load any independent `.glb` / `.obj` mesh (such as a multi-lobe brain or sci-fi energy core) inside the outer head with real-time SSBO offset/scale updates (no mesh rebuild required), per-lobe coloring, and separate outer vs. inner shader appearance parameters (`Glow`, `Particle Size`, `Softness`, `Rim Power`).    
+- **Live Per-Part Custom Coloring & Custom Eye-Part Detection:** Tint every outer or inner sub-mesh independently at runtime without reloading the model, paired with automatic or custom eye sub-mesh matching for eased dim-blinking and jaw-hinge speech animation.
+- **Anatomical Neck-Pivot & Mesh Orientation Control:** Smoothly tracks the cursor with spring-damped inertia and a `smoothstep` neck pivot—turning and nodding naturally while keeping shoulders steady, or switching to `0.00 (OFF)` for distortion-free rigid rotation on floating heads and skulls.    
+- **True Per-Pixel Desktop Transparency, Auto-Dim & DirtyRect Highlighter:** Renders premultiplied-alpha frames via zero-copy dual-PBO readback onto a borderless, transparent, click-through (`WS_EX_TRANSPARENT`) FireMonkey layered window with automatic hover dimming (`AutoDimOnHover`), interactive dragging, corner snapping, live avatar resizing, and a decoupled fullscreen Skia screen highlighter (`TAliveHighlighter`) with `DirtyRect` clipping (`0%` load when idle).   
+- **Per-Mesh Auto-Presets & Auto-Save on Exit:** Automatically saves and restores complete per-head setups (`heads/*.ini` + startup index) including outer & inner meshes, neck pivot, orientation, per-part colors/visibility, hologram style, appearance settings, feature toggles, avatar size, and screen position.   
+- **True `0%` CPU / GPU Despawn & Adaptive FPS:** Includes holographic top-to-bottom build-up (`Spawn`), gravity-driven tear-down (`Despawn` parking the overlay at `0.0–0.8%` CPU and `0%` GPU while keeping the OpenGL context warm), and automatic `ActiveTargetFPS` / `IdleTargetFPS` throttling.    
+- **Tabbed Runtime Control Panel & Native System Tray:** Features a compact, HD-screen-friendly tabbed cockpit (`uControls`) with individual toggles for every behavioral feature (`MouseForceField`, `IdleLifeMotion`, `NaturalBlinking`, `AutoDimOnHover`, `AdaptiveFPS`) for live profiling and low-end hardware tuning, plus a dependency-free Win32 `Shell_NotifyIconW` system tray menu (`uAppTray`).   
+    
+---   
+     
+## 🚧 Work in Progress / Roadmap    
+     
+- **AI API & Lip-Sync Integration:** Connecting an OpenAI-compatible REST bridge (`/v1/chat/completions` supporting local Ollama / `llama.cpp` as well as free cloud APIs) paired with real-time audio-driven jaw/lip-sync (`MouthOpen`) and optional offline speech recognition (**Vosk**) + neural TTS (**Piper** / `MiniAudio4Delphi`).
+- **Self-Reflection & Embodied Avatar Control:** Giving the AI direct runtime control over its own visual appearance—switching meshes (`angelica.glb`, `cyberhead`, etc.), hologram styles, colors, emotions, and `HeadLook` / `EyeLook` vectors to express context and mood.
+- **Expanded Fullscreen Desktop Overlay Drawing & Writing:** Extending the decoupled `DirtyRect` fullscreen overlay layer so the AI can draw callouts, annotations, arrows, and live desktop hints directly alongside `TAliveHighlighter`.
 
-     
-## ✨ Key Features  
-     
-- **100% GPU Particle Simulation & Splatting:** Spring-damper physics, 3D perspective projection, normal-based rim lighting, volumetric depth shading, and soft radial glow splatting executed directly inside OpenGL 4.3 Compute Shaders (`SSBO` + coherent `imageLoad`/`imageStore`).  
-- **Zero-Dependency 3D Mesh Loader (`.glb` & `.obj`):** Parses binary glTF 2.0 scene hierarchies (`nodes` + `TRS`/`matrix` transforms), extracts normals, supports interactive per-part sub-mesh filtering (hair, eyes, glasses, armor, internal parts), body-part classification, and glTF morph targets / vertex-frame animations.  
-- **5 Distinct Hologram Shader Styles & 2D-to-3D Photo Mode:** Switch live between **Hologram** (classic scanlines & rim glow), **Android Circuit** (procedural circuit traces, vias & traveling data pulses), **Cyber Matrix** (vertical digital streams), **Blueprint** (topographic 3D contour grid), **Solid** (dense shaded 3D surface), and **Photo** (`PNG`/`JPG` luma-to-depth + Sobel normal estimation) modes.  
-- **Dual-Mesh Inner Core / Brain System:** Load any independent `.glb` / `.obj` mesh (such as a multi-lobe brain or sci-fi energy core) inside the outer head with dedicated scale, vertical offset, particle budget, per-lobe coloring, and separate outer vs. inner shader appearance parameters (`Glow`, `Particle Size`, `Softness`, `Rim Power`).  
-- **Live Per-Part Custom Coloring & Eye Dim-Blink:** Tint every outer or inner sub-mesh independently at runtime without reloading the model, paired with automatic eye sub-mesh detection for smooth eased dim-blinking and jaw-hinge speech animation.  
-- **Anatomical Neck-Pivot & Rigid Head Mouse Tracking:** Smoothly tracks the global cursor position (`GetCursorPos`) with spring-damped inertia and a `smoothstep` neck pivot—turning and nodding the head naturally while keeping shoulders steady, or switching to `0.00 (OFF)` for distortion-free rigid rotation on floating heads and skulls.  
-- **True Per-Pixel Desktop Transparency, Live Resize & Dragging:** Renders premultiplied-alpha frames via zero-copy dual-PBO readback onto a borderless, transparent, click-through (`WS_EX_TRANSPARENT`) FireMonkey layered window with interactive mouse dragging, corner snapping, live avatar resizing, and an integrated organic Skia screen highlighter (`uSkiaAliveHighlighter`).  
-- **Per-Mesh & Startup Auto-Presets:** Automatically saves and restores complete per-head setups (`presets\<Folder>_<Mesh>.ini` + `last.ini` startup index) including outer & inner meshes, all per-part colors/visibility, hologram style, appearance settings, blink timing, avatar size, screen position, and drag mode.  
-- **Full Lifecycle Scanline Animations & Adaptive FPS:** Includes holographic top-to-bottom build-up (`Spawn`), organic idle hover, gravity-driven tear-down (`Despawn`), and automatic `ActiveTargetFPS` / `IdleTargetFPS` throttling to keep laptop fans silent.  
-- **Tabbed Runtime Control Panel & Native System Tray:** Features a compact, HD-screen-friendly tabbed cockpit (`uControls` with `Appearance / Shader`, `Mesh & Sources`, `Inner Core / Brain`, `Photo`, `Face / Animation`, `Desktop Overlay`, and `System / Performance` tabs) and a dependency-free Win32 `Shell_NotifyIconW` system tray menu (`uAppTray`).  
-     
----     
-     
-## 🚧 Work in Progress / Roadmap  
-     
-- **LLM / MCP & TTS Integration:** Connecting an OpenAI-compatible / local LLM API + speech output so the avatar autonomously drives lip-sync (`MouthOpen`), emotions, style switches, and desktop highlights (`TAliveHighlighter`).  
-- **Extended Facial Expressions:** Further refining mouth lip-separation and emotion-driven brow/cheek poses across all five shader styles.  
      
 ---     
      
@@ -88,8 +86,29 @@ Tested in transparent desktop overlay mode on Windows:
 
     
 ---    
-    
-## 📝 Changelog
+         
+## 📝 Changelog     
+     
+### v0.42 — Visuals & Organic Liveliness       
+      
+### ✨ Visuals & Organic Liveliness
+- **Interactive 3D Cursor Force-Field (`MouseForceField`):** Passing the mouse cursor over the hologram radially displaces, swirls, and gently pushes particles back in Z-depth before smoothly springing them back into shape (works seamlessly even in click-through mode using thread-safe screen coordinates).
+- **Idle Breathing & Micro-Glances (`IdleLifeMotion`):** Multi-frequency organic head drift and subtle saccadic micro-movements keep the avatar naturally alive whenever the mouse cursor is idle.     
+- **Natural Irregular Blinking (`NaturalBlinking`):** Replaced manual blink interval/speed sliders with organic randomized blink intervals, variable lid-closure timing, and natural occasional double-blinks.     
+- **Auto-Dim on Hover (`AutoDimOnHover`):** Automatically fades the avatar when the cursor moves over it (`AUTO_DIM_ALPHA = 0.22`) so underlying code editors, text, and windows remain effortless to read and work with.     
+- **Custom Eye-Part Matching & Face Orientation:** Auto-detects eye sub-meshes (`eye`, `iris`, `pupil`, `cornea`, etc.) and supports custom eye-part names plus mesh yaw/pitch orientation presets.     
+     
+### 🎨 Control Panel & Preset System     
+- **Per-Mesh Head Presets (`heads/*.ini`) & Auto-Save on Exit:** Automatically saves and restores camera distance, neck pivot, orientation, colors, inner-core settings, and animation preferences per loaded `.glb`/`.obj` model, including automatic state saving on application exit.
+- **Instant Inner-Core Offset & Scale:** Adjusting `InnerCoreOffsetY` and `InnerCoreScale` updates target coordinates directly in the SSBO without triggering a full mesh rebuild or resetting the form-in animation.     
+- **Granular Feature Toggles:** Added individual checkboxes for `Mouse touch force-field`, `Idle breathing & micro-glances`, `Natural random blinking`, `Auto-dim on mouseover`, and `Adaptive FPS` for real-time profiling and low-end hardware tuning.     
+     
+### ⚡ Performance & Desktop Integration     
+- **Fullscreen Desktop Highlighter (`TAliveHighlighter`) with DirtyRect Clipping:** Decoupled the desktop pointer/highlighter onto a dedicated fullscreen overlay layer that sleeps completely (`0%` CPU/GPU) when inactive and clips rasterization strictly to its active bounding box (`DirtyRect`) while moving.
+- **True `0%` CPU / GPU Despawn State:** Despawning cleanly hides the overlay (`Visible := False`) and parks the render loop (`0.0–0.8%` CPU, `0%` GPU) while keeping the OpenGL context warm for instant re-spawning.     
+- **Single-Pass Compute Projection & Thread Safety:** Eliminated redundant 3D-to-2D shader projections and added `TCriticalSection` synchronization (`FDataLock`) across resize, mesh reload, and spawn/despawn cycles.     
+- **Code Cleanup:** Simplified startup asset probing (`angelica.glb` default) and removed obsolete blink interval/speed sliders and unused timer/countdown fields.     
+      
 
 ### v0.41 — Hologram Styles, Dual-Mesh Brain Core, Per-Part Colors & Full Preset Persistence
 
