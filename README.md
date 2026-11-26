@@ -11,12 +11,13 @@ Unlike heavy Electron or game-engine overlays, **Yutani C.H.A.O.S. GPU** runs na
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/LaMitaOne/Yutani.CHAOS)  
      
       
-<img width="631" height="626" alt="Unbenannt" src="https://github.com/user-attachments/assets/259fb660-3919-4576-8c8f-2a39fddffe42" />
+<img height="350" alt="Unbenannt" src="https://github.com/user-attachments/assets/259fb660-3919-4576-8c8f-2a39fddffe42" />
+<img height="350" alt="b6pwb1" src="https://github.com/user-attachments/assets/d682b365-ae38-424a-a412-946e67bdbf4b" />
       
 Looking at this now…   
 those 4 days of fighting with compute shaders before seeing the first pixel were absolutely worth it.    
      
-<img width="260" height="390" alt="b6pwb1" src="https://github.com/user-attachments/assets/d682b365-ae38-424a-a412-946e67bdbf4b" />
+
 
      
 [Anime Head Base Mesh](https://sketchfab.com/3d-models/anime-head-base-mesh-58e291934379438584012d09faefedf6) by MarFab   
@@ -28,7 +29,7 @@ v0.4:  https://youtu.be/sGEjN7L1UJA
     
 ---
 
-<img width="658" height="552" alt="Unbenannt" src="https://github.com/user-attachments/assets/c8d77d6d-e47f-4c69-8baf-b1d659d2362d" />
+<img height="350" alt="Unbenannt" src="https://github.com/user-attachments/assets/c8d77d6d-e47f-4c69-8baf-b1d659d2362d" />
           
 ## ✨ Key Features      
     
