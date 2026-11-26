@@ -84,6 +84,12 @@ type
       names here. Comparison is case-insensitive substring, matching the
       existing IsExcluded keyword logic. }
     IncludeNames: TArray<string>;
+    { Single name that always survives the ExcludeKeywords filter, even in
+      automatic mode (empty IncludeNames). Used for the custom eye part:
+      eyeball meshes carry exclude keywords like cornea / sclera / iris /
+      pupil, so a user-picked eye part would be dropped without this.
+      Case-insensitive substring match against node and mesh names. }
+    KeepName: string;
     RecomputeNormals: Boolean;       // rebuild per-vertex normals from faces
     DetectBodyParts: Boolean;        // run body-part classification
     LoadMorphTargets: Boolean;       // parse glTF blend shapes
@@ -107,6 +113,10 @@ type
   TYutaniMeshLoader = class
   private
     class function IsExcluded(const AName: string; const AKeywords: TArray<string>): Boolean;
+    { IsExcluded honours KeepName: a name containing the kept keyword is
+      never excluded, so the custom eye part survives the auto-exclude list
+      without turning the whole load into a manual include. }
+    class function IsExcludedKeep(const AName: string; const AKeywords: TArray<string>; const AKeep: string): Boolean;
     class function IsIncluded(const AName: string; const AInclude: TArray<string>): Boolean;
     class function IsLeftToken(const AName: string): Boolean;
     class function BodyPartFromName(const AName: string): TMeshBodyPart;
@@ -152,6 +162,7 @@ begin
   Result.FlipY := True;
   Result.ExcludeKeywords := ['hair', 'fur', 'eyelash', 'lash', 'brow', 'brow_card', 'hair_card', 'teeth', 'tooth', 'tongue', 'gum', 'caruncle', 'mouth', 'mouth_bag', 'mouthinside', 'innermouth', 'mouthcavity', 'oral', 'oralcavity', 'jaw', 'head_inside', 'headinside', 'cornea', 'sclera', 'meniscus', 'iris', 'pupil', 'tear', 'tearduct'];
   Result.IncludeNames := nil;
+  Result.KeepName := '';
   Result.RecomputeNormals := False;
   Result.DetectBodyParts := True;
   Result.LoadMorphTargets := True;
@@ -361,6 +372,13 @@ begin
     if (KW <> '') and LowerName.Contains(KW.ToLower) then
       Exit(True);
   Result := False;
+end;
+
+class function TYutaniMeshLoader.IsExcludedKeep(const AName: string; const AKeywords: TArray<string>; const AKeep: string): Boolean;
+begin
+  if (AKeep <> '') and (AName <> '') and AName.ToLower.Contains(AKeep.ToLower) then
+    Exit(False);
+  Result := IsExcluded(AName, AKeywords);
 end;
 
 { True when AName survives the include filter: when IncludeNames is empty
@@ -774,7 +792,7 @@ begin
           SkipCurrent := not IsIncluded(GroupName, AOptions.IncludeNames)
         else
         begin
-          SkipCurrent := IsExcluded(GroupName, AOptions.ExcludeKeywords);
+          SkipCurrent := IsExcludedKeep(GroupName, AOptions.ExcludeKeywords, AOptions.KeepName);
           { Per-part include filter: skip groups whose name is not in the
             IncludeNames list when that list is set. An empty list means no
             include filtering (load every part that survived the exclude list). }
@@ -1199,7 +1217,7 @@ var
     end
     else
     begin
-      if IsExcluded(ANodeName, AOptions.ExcludeKeywords) or IsExcluded(LMeshName, AOptions.ExcludeKeywords) then
+      if IsExcludedKeep(ANodeName, AOptions.ExcludeKeywords, AOptions.KeepName) or IsExcludedKeep(LMeshName, AOptions.ExcludeKeywords, AOptions.KeepName) then
         Exit;
     end;
     LPrims := JArr(LMeshObj.FindValue('primitives'));

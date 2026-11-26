@@ -85,14 +85,32 @@ type
     FTbParticleSize: TTrackBar;
     FTbSoftness: TTrackBar;
     FTbRimPower: TTrackBar;
-    { Desktop Overlay tab: the drag-mode checkbox and the avatar-size
-      trackbar, synced from GChaos every time the panel is shown. }
+    { Desktop Overlay tab: the drag-mode checkbox, the auto-dim checkbox and
+      the avatar-size trackbar, synced from GChaos every time the panel is
+      shown. }
     FDragCheck: TCheckBox;
+    FAutoDimCheck: TCheckBox;
+    { Behavior toggles (Face / Animation tab): kept as fields so preset
+      loads can re-sync them without re-scanning the control tree. }
+    FMouseForceCheck: TCheckBox;
+    FIdleLifeCheck: TCheckBox;
+    FNaturalBlinkCheck: TCheckBox;
     FTbAvatarSize: TTrackBar;
+    { Mesh tab: combo picking which mesh part acts as the eyes. '(Auto)' is
+      the first entry followed by every MeshNames entry; Tag stays unused,
+      the selection maps to GChaos.CustomEyePartName. }
+    FEyeCombo: TComboBox;
     { Style combo and parts-mode checkbox, kept as references so a preset
       load can refresh them from the avatar state. }
     FStyleCombo: TComboBox;
     FAutoCheck: TCheckBox;
+    { System / Performance tab track + check references so a preset load
+      can refresh the FPS tiers and the neck pivot from the avatar state. }
+    FTbActiveFPS: TTrackBar;
+    FTbIdleFPS: TTrackBar;
+    FTbIdleTimeout: TTrackBar;
+    FTbNeckPivot: TTrackBar;
+    FAdaptiveCheck: TCheckBox;
     { FAutomaticParts tracks the "Automatic" checkbox state: when True the
       loader applies its built-in auto-exclude list (hair/fur/mouth...); when
       False the per-part checkbox grid below wins and the auto-exclude list
@@ -122,7 +140,15 @@ type
     { Per-part colour picker handler: pushes the picked colour into
       GChaos.SetPartColor using the picker's Tag as the part index. }
     procedure OnPartColorChange(Sender: TObject);
+    { Mesh tab: eye-part combo handler - writes the picked part name into
+      GChaos.CustomEyePartName and rebuilds the particle cloud so the eye
+      flag lands on the chosen part. }
+    procedure OnEyePartChange(Sender: TObject);
     procedure RebuildPartsList;
+    { Refreshes the eye-part combo from GChaos.MeshNames: '(Auto)' first,
+      then every part name, selection mirroring CustomEyePartName. Also
+      called after a mesh load or a preset apply. }
+    procedure SyncEyeCombo;
     { Mirrors RebuildPartsList for the custom inner core mesh: rebuilds the
       name + picker rows from GChaos.InnerMeshNames. }
     procedure RebuildInnerPartsList;
@@ -130,12 +156,11 @@ type
       from the newly selected property set (outer head or inner core). }
     procedure OnAppearanceTargetToggle(Sender: TObject);
     procedure SyncAppearanceTracks;
-    { Desktop Overlay tab: drive the alive highlighter entity. }
+    { Desktop Overlay tab: drive the alive highlighter entity. Test enables
+      mouse-follow mode so the entity chases the live cursor; dismiss turns
+      the mode off and walks the entity out. }
     procedure OnTestHighlighter(Sender: TObject);
     procedure OnDismissHighlight(Sender: TObject);
-    { Desktop Overlay tab: dock the avatar to a bottom corner of the screen. }
-    procedure OnSnapBottomLeft(Sender: TObject);
-    procedure OnSnapBottomRight(Sender: TObject);
     { Form lifecycle: hide keeps drag mode active (presets round-trip it
       and the tray menu can restore click-through), show refreshes the
       overlay controls from the live avatar. }
@@ -242,14 +267,12 @@ const
   tgJitter = 5;
   tgMouthOpen = 6;
   tgEyeOpeness = 7;
-  tgBlinkInterval = 8;
   tgActiveTargetFPS = 9;
   tgIdleTargetFPS = 10;
   tgIdleTimeout = 11;
   tgStepFilter = 12;
   tgParticleBudget = 13;
   tgNeckPivot = 14;
-  tgBlinkDuration = 15;
   tgCoreScale = 16;
   tgCoreOffsetY = 17;
   tgCoreBudget = 18;
@@ -268,18 +291,20 @@ const
   tgStayOnTop = 5;
   tgClickThrough = 6;
   tgAutoParts = 7;
+  tgAutoDim = 8;
+  tgMouseForce = 9;
+  tgIdleLife = 10;
+  tgNaturalBlink = 11;
 
 const
   { Layout constants - wider-than-tall window sized for a normal HD screen. }
-  PANEL_W = 640;
-  PANEL_H = 520;
+  PANEL_W = 800;
+  PANEL_H = 700;
   CTRL_X = 24;
   CTRL_W = 560;
   BTN_W = 260;
 
 procedure TForm2.FormCreate(Sender: TObject);
-var
-  SnapL, SnapR: TButton;
 begin
   Caption := 'Yutani Chaos - Controls';
   Self.ClientWidth := PANEL_W;
@@ -385,6 +410,20 @@ begin
     FNoPartsLabel.Width := CTRL_W - 16;
     FNoPartsLabel.Text := 'Load a .glb/.obj mesh to see its parts here.';
     RebuildPartsList;
+    { Eye-part override: '(Auto)' keeps the automatic eye-name detection,
+      picking a concrete part flags exactly that mesh as the eyes. The list
+      refreshes on every mesh load via RebuildPartsList. }
+    AddLabel('Use part as eyes:');
+    FEyeCombo := TComboBox.Create(Self);
+    FEyeCombo.Parent := FCurrentTab;
+    FEyeCombo.Position.X := CTRL_X;
+    FEyeCombo.Position.Y := FNextY;
+    FEyeCombo.Width := CTRL_W;
+    FEyeCombo.Items.Add('(Auto)');
+    FEyeCombo.ItemIndex := 0;
+    FEyeCombo.OnChange := OnEyePartChange;
+    SyncEyeCombo;
+    FNextY := FNextY + 44;
 
     { ---- Tab 3: Photo & Depth ---- }
     FCurrentTab := NewTab('Photo & Depth');
@@ -437,40 +476,33 @@ begin
     AddLabel('Mouth and eyes drive the holo shader (jaw hinge, dim-blink).');
     AddTrack(tgMouthOpen, 'Mouth open', 0.0, 1.0, 0.02, GChaos.MouthOpen);
     AddTrack(tgEyeOpeness, 'Eye openess', 0.0, 1.0, 0.02, GChaos.EyeOpeness);
-    AddTrack(tgNeckPivot, 'Neck pivot', 0.0, 1.0, 0.01, GChaos.NeckPivotRatio);
-    AddSection('AUTO-BLINK');
-    AddTrack(tgBlinkInterval, 'Blink interval (s)', 0.5, 12.0, 0.1, GChaos.BlinkInterval);
-    AddTrack(tgBlinkDuration, 'Blink speed / duration (s)', 0.10, 1.50, 0.02, GChaos.BlinkDuration);
+    FTbNeckPivot := AddTrack(tgNeckPivot, 'Neck pivot', 0.0, 1.0, 0.01, GChaos.NeckPivotRatio);
+    AddSection('BEHAVIOR');
+    { Feature toggles for isolated measurement / disabling - the direct
+      counterparts of the MouseForceField / IdleLifeMotion /
+      NaturalBlinking properties on TSkChaos. }
+    FMouseForceCheck := AddCheck(tgMouseForce, 'Mouse touch force-field', GChaos.MouseForceField);
+    FIdleLifeCheck := AddCheck(tgIdleLife, 'Idle breathing & micro-glances', GChaos.IdleLifeMotion);
+    FNaturalBlinkCheck := AddCheck(tgNaturalBlink, 'Natural random blinking', GChaos.NaturalBlinking);
 
     { ---- Tab 6: Desktop Overlay ---- }
     FCurrentTab := NewTab('Desktop Overlay');
     AddSection('ALIVE HIGHLIGHTER');
-    { The test button sends the entity to this form's screen rectangle so
-      the organic light-snake flies across the desktop and orbits the
-      panel; GChaos draws it on top of the avatar image. }
-    AddButton('Test highlighter (point to controls)', OnTestHighlighter);
+    { Test turns on mouse-follow mode: the entity chases the live cursor
+      (converted into GChaos' local frame every frame) instead of flying to
+      a one-off rectangle. Dismiss turns the mode off and walks the entity
+      out with its exit animation. }
+    AddButton('Test highlighter (follow mouse)', OnTestHighlighter);
     AddButton('Dismiss highlighter', OnDismissHighlight);
-    AddLabel('The highlighter entity is drawn by GChaos, tinted with the accent colour.');
+    AddLabel('The highlighter entity is drawn by the desktop overlay on Form1, tinted with the accent colour.');
     AddSection('POSITION & SIZE');
     { Drag mode hands the avatar mouse input (click-through off) so the
       left button can carry it around the screen. }
     FDragCheck := AddCheck(tgDragMode, 'Drag avatar with mouse', GChaos.DragMode);
-    { Corner docks: side by side so both presets sit on one row. }
-    SnapL := TButton.Create(Self);
-    SnapL.Parent := FCurrentTab;
-    SnapL.Position.X := CTRL_X;
-    SnapL.Position.Y := FNextY;
-    SnapL.Width := BTN_W div 2;
-    SnapL.Text := 'Snap Bottom-Left';
-    SnapL.OnClick := OnSnapBottomLeft;
-    SnapR := TButton.Create(Self);
-    SnapR.Parent := FCurrentTab;
-    SnapR.Position.X := CTRL_X + BTN_W div 2 + 8;
-    SnapR.Position.Y := FNextY;
-    SnapR.Width := BTN_W div 2 - 8;
-    SnapR.Text := 'Snap Bottom-Right';
-    SnapR.OnClick := OnSnapBottomRight;
-    FNextY := FNextY + 34;
+    { Auto-dim: eases the avatar alpha toward AUTO_DIM_ALPHA while the
+      cursor hovers its screen rect, back to full when it leaves. }
+    FAutoDimCheck := AddCheck(tgAutoDim, 'Auto-dim on mouseover', GChaos.AutoDimOnHover);
+    FNextY := FNextY + 4;
     FTbAvatarSize := AddTrack(tgAvatarSize, 'Avatar size (px)', 140, 640, 4, GChaos.Width);
     AddSection('PRESETS');
     { The per-head slot saves next to the executable, where the automatic
@@ -484,14 +516,14 @@ begin
     FCurrentTab := NewTab('System / Performance');
     AddSection('FRAME RATE');
     AddCheck(tgActive, 'Active', GChaos.Active);
-    AddCheck(tgAdaptiveFPS, 'Adaptive FPS', GChaos.AdaptiveFPS);
+    FAdaptiveCheck := AddCheck(tgAdaptiveFPS, 'Adaptive FPS', GChaos.AdaptiveFPS);
     AddSection('WINDOW');
     AddCheck(tgMouseFollow, 'Mouse follow', GChaos.MouseFollow);
     AddCheck(tgStayOnTop, 'Stay on top', GChaos.StayOnTop);
     AddCheck(tgClickThrough, 'Click-through', GChaos.ClickThrough);
-    AddTrack(tgActiveTargetFPS, 'Active target FPS', 5, 120, 1, GChaos.ActiveTargetFPS);
-    AddTrack(tgIdleTargetFPS, 'Idle target FPS', 1, 60, 1, GChaos.IdleTargetFPS);
-    AddTrack(tgIdleTimeout, 'Idle timeout (s)', 0.5, 30, 0.5, GChaos.IdleTimeoutSec);
+    FTbActiveFPS := AddTrack(tgActiveTargetFPS, 'Active target FPS', 5, 120, 1, GChaos.ActiveTargetFPS);
+    FTbIdleFPS := AddTrack(tgIdleTargetFPS, 'Idle target FPS', 1, 60, 1, GChaos.IdleTargetFPS);
+    FTbIdleTimeout := AddTrack(tgIdleTimeout, 'Idle timeout (s)', 0.5, 30, 0.5, GChaos.IdleTimeoutSec);
     AddSection('LIVE');
     FFpsLabel := AddLabel('Real FPS: -');
     FIdleLabel := AddLabel('Idle: -');
@@ -778,6 +810,8 @@ begin
     FNextY := FNextY + 26;
   end;
   FNextY := OldY;
+  { The eye-part combo mirrors the same mesh-name list. }
+  SyncEyeCombo;
 end;
 
 procedure TForm2.RebuildInnerPartsList;
@@ -925,6 +959,72 @@ begin
   GChaos.SetPartColor(Integer(ccb.Tag), ccb.Color);
 end;
 
+procedure TForm2.SyncEyeCombo;
+var
+  Names: TArray<string>;
+  I, Sel: Integer;
+begin
+  if not Assigned(FEyeCombo) or not Assigned(GChaos) then
+    Exit;
+  { Rebuild the item list: '(Auto)' plus every mesh name. OnChange stays
+    disconnected while filling so the programmatic selection cannot fire
+    the change handler back into GChaos. }
+  FEyeCombo.OnChange := nil;
+  FEyeCombo.Items.Clear;
+  FEyeCombo.Items.Add('(Auto)');
+  Names := GChaos.MeshNames;
+  for I := 0 to High(Names) do
+    FEyeCombo.Items.Add(Names[I]);
+  Sel := 0;
+  if (GChaos.CustomEyePartName <> '') and (GChaos.CustomEyePartName <> '(Auto)') then
+    for I := 0 to High(Names) do
+      if SameText(Names[I], GChaos.CustomEyePartName) then
+      begin
+        Sel := I + 1;
+        Break;
+      end;
+  { No exact entry: the preset's eye part may only approximate the loaded
+    mesh's naming (Eyes vs. LeftEye_Mesh.001). TSkChaos.MatchesEyePartName
+    accepts substring matches in both directions, so pick the first part
+    that matches the same way instead of silently falling back to (Auto). }
+  if Sel = 0 then
+    for I := 0 to High(Names) do
+      if GChaos.MatchesEyePartName(Names[I]) then
+      begin
+        Sel := I + 1;
+        Break;
+      end;
+  if Sel < FEyeCombo.Items.Count then
+    FEyeCombo.ItemIndex := Sel
+  else
+    FEyeCombo.ItemIndex := 0;
+  FEyeCombo.OnChange := OnEyePartChange;
+end;
+
+procedure TForm2.OnEyePartChange(Sender: TObject);
+var
+  cb: TComboBox;
+begin
+  if not Assigned(GChaos) then
+    Exit;
+  cb := Sender as TComboBox;
+  { Index 0 is '(Auto)': an empty CustomEyePartName restores the automatic
+    eye-name detection. Any other index maps to MeshNames[Index - 1]. }
+  if cb.ItemIndex <= 0 then
+    GChaos.CustomEyePartName := ''
+  else
+    GChaos.CustomEyePartName := cb.Items[cb.ItemIndex];
+  { A custom part that the loader's auto-exclude keywords would drop
+    (cornea, sclera, iris, ...) is only re-admitted while the mesh file is
+    (re)parsed - the stored point cloud of a skipped part is gone, so a
+    plain cloud rebuild cannot bring it back. Reload the source for such
+    parts; everything else re-flags fine through RebuildTargetCloud. }
+  if (GChaos.CustomEyePartName <> '') and IsExcludedName(GChaos.CustomEyePartName) then
+    GChaos.ReloadCurrentSource
+  else
+    GChaos.RebuildTargetCloud;
+end;
+
 {==============================================================================
   Track / Combo / Check change handlers
 ==============================================================================}
@@ -1007,16 +1107,6 @@ begin
       begin
         GChaos.ParticleBudget := Cardinal(Round(v));
         FValLabels[tgParticleBudget].Text := 'Particle budget: ' + IntToStr(Round(v));
-      end;
-    tgBlinkInterval:
-      begin
-        GChaos.BlinkInterval := v;
-        FValLabels[tgBlinkInterval].Text := 'Blink interval (s): ' + FormatFloat('0.00', v);
-      end;
-    tgBlinkDuration:
-      begin
-        GChaos.BlinkDuration := v;
-        FValLabels[tgBlinkDuration].Text := 'Blink speed / duration (s): ' + FormatFloat('0.00', v);
       end;
     tgCoreScale:
       begin
@@ -1101,6 +1191,14 @@ begin
       GChaos.StayOnTop := cb.IsChecked;
     tgClickThrough:
       GChaos.ClickThrough := cb.IsChecked;
+    tgAutoDim:
+      GChaos.AutoDimOnHover := cb.IsChecked;
+    tgMouseForce:
+      GChaos.MouseForceField := cb.IsChecked;
+    tgIdleLife:
+      GChaos.IdleLifeMotion := cb.IsChecked;
+    tgNaturalBlink:
+      GChaos.NaturalBlinking := cb.IsChecked;
     tgDragMode:
       GChaos.DragMode := cb.IsChecked;
     tgAutoParts:
@@ -1278,30 +1376,21 @@ procedure TForm2.OnTestHighlighter(Sender: TObject);
 begin
   if not Assigned(GChaos) then
     Exit;
-  { Screen rectangle of this panel: the entity flies across the desktop and
-    orbits the form so it points at the controls. }
-  GChaos.HighlightRect(TRectF.Create(Self.Left, Self.Top, Self.Left + Self.Width, Self.Top + Self.Height));
+  { Mouse-follow mode: the desktop overlay control converts the live cursor
+    into its own full-screen frame every frame and keeps the entity
+    retargeted there, so it chases the mouse anywhere on the desktop
+    instead of orbiting a fixed rect. }
+  GChaos.HighlightFollowMouse := True;
 end;
 
 procedure TForm2.OnDismissHighlight(Sender: TObject);
 begin
   if not Assigned(GChaos) then
     Exit;
+  { Drop the follow mode first so the exit animation is not overridden by
+    the next per-frame retarget, then walk the entity off-screen. }
+  GChaos.HighlightFollowMouse := False;
   GChaos.DismissHighlight;
-end;
-
-procedure TForm2.OnSnapBottomLeft(Sender: TObject);
-begin
-  if not Assigned(GChaos) then
-    Exit;
-  GChaos.SnapBottomLeft;
-end;
-
-procedure TForm2.OnSnapBottomRight(Sender: TObject);
-begin
-  if not Assigned(GChaos) then
-    Exit;
-  GChaos.SnapBottomRight;
 end;
 
 procedure TForm2.OnFormShow(Sender: TObject);
@@ -1327,9 +1416,34 @@ begin
     Exit;
   { Programmatic checkbox / trackbar updates must not fire their change
     handlers and write back into the properties they came from. }
-  FDragCheck.OnChange := nil;
-  FDragCheck.IsChecked := GChaos.DragMode;
-  FDragCheck.OnChange := OnCheckChange;
+    FDragCheck.OnChange := OnCheckChange;
+  if Assigned(FAutoDimCheck) then
+  begin
+    FAutoDimCheck.OnChange := nil;
+    FAutoDimCheck.IsChecked := GChaos.AutoDimOnHover;
+    FAutoDimCheck.OnChange := OnCheckChange;
+  end;
+  { Behavior toggles live in the Face / Animation tab but mirror the same
+    three properties the preset round-trips, so a preset load updates
+    them here exactly like the drag / auto-dim pair above. }
+  if Assigned(FMouseForceCheck) then
+  begin
+    FMouseForceCheck.OnChange := nil;
+    FMouseForceCheck.IsChecked := GChaos.MouseForceField;
+    FMouseForceCheck.OnChange := OnCheckChange;
+  end;
+  if Assigned(FIdleLifeCheck) then
+  begin
+    FIdleLifeCheck.OnChange := nil;
+    FIdleLifeCheck.IsChecked := GChaos.IdleLifeMotion;
+    FIdleLifeCheck.OnChange := OnCheckChange;
+  end;
+  if Assigned(FNaturalBlinkCheck) then
+  begin
+    FNaturalBlinkCheck.OnChange := nil;
+    FNaturalBlinkCheck.IsChecked := GChaos.NaturalBlinking;
+    FNaturalBlinkCheck.OnChange := OnCheckChange;
+  end;
   SizePx := Max(Round(GChaos.Width), 1);
   FTbAvatarSize.OnChange := nil;
   FTbAvatarSize.Value := EnsureRange(SizePx, Round(FTbAvatarSize.Min), Round(FTbAvatarSize.Max));
@@ -1404,6 +1518,20 @@ end;
 procedure TForm2.SyncControlsFromChaos;
 var
   StyleIdx: Integer;
+
+  { Programmatic track refresh without firing the change handler back into
+    the property the value came from. }
+  procedure SyncTrack(tb: TTrackBar; AValue: Single; const ALabel: string);
+  begin
+    if not Assigned(tb) then
+      Exit;
+    tb.OnChange := nil;
+    tb.Value := EnsureRange(AValue, tb.Min, tb.Max);
+    tb.OnChange := OnTrackChange;
+    if Assigned(FValLabels[tb.Tag]) then
+      FValLabels[tb.Tag].Text := ALabel;
+  end;
+
 begin
   if not Assigned(GChaos) then
     Exit;
@@ -1429,6 +1557,23 @@ begin
   end;
   SyncAppearanceTracks;
   SyncOverlayControls;
+  { Eye-part combo follows the (possibly preset-driven) override. }
+  SyncEyeCombo;
+  { Neck pivot: 0 reads as "OFF (Rigid Head)" like the live label does. }
+  if GChaos.NeckPivotRatio <= 0.001 then
+    SyncTrack(FTbNeckPivot, GChaos.NeckPivotRatio, 'Neck pivot: OFF (Rigid Head)')
+  else
+    SyncTrack(FTbNeckPivot, GChaos.NeckPivotRatio, 'Neck pivot: ' + FormatFloat('0.00', GChaos.NeckPivotRatio));
+  { Performance tiers follow the preset-loaded adaptive settings. }
+  if Assigned(FAdaptiveCheck) then
+  begin
+    FAdaptiveCheck.OnChange := nil;
+    FAdaptiveCheck.IsChecked := GChaos.AdaptiveFPS;
+    FAdaptiveCheck.OnChange := OnCheckChange;
+  end;
+  SyncTrack(FTbActiveFPS, GChaos.ActiveTargetFPS, 'Active target FPS: ' + IntToStr(GChaos.ActiveTargetFPS));
+  SyncTrack(FTbIdleFPS, GChaos.IdleTargetFPS, 'Idle target FPS: ' + IntToStr(GChaos.IdleTargetFPS));
+  SyncTrack(FTbIdleTimeout, GChaos.IdleTimeoutSec, 'Idle timeout (s): ' + FormatFloat('0.0', GChaos.IdleTimeoutSec));
 end;
 
 end.

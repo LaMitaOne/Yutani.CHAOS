@@ -82,12 +82,16 @@ type
     FStyle: TAliveStyle;
     FActive: Boolean;
     FAllowMoodSwings: Boolean;
-    FActiveCountdown: Single; // Auto-dismiss timer (seconds)
     FSelfDestruct: Boolean;  // Flag indicating the entity should leave the screen
     FBounds: TRectF;          // Screen boundaries (Width/Height)
     FSavedNormalColor: TAlphaColor; // Stores the user's set color persistently
     FCollisionEnabled: Boolean;
     FStuckCounter: Integer; // Z�hlt, wie oft er am selben Hindernis klebt
+    { Dirty-rect tracking: union of last frame's and this frame's entity
+      bounds so the overlay host can clip rasterization to the region the
+      entity actually touches (head, tail, glow) instead of the whole
+      desktop. Empty while idle. }
+    FLastDirtyRect: TRectF;
 
     { Physics & AI Core }
     procedure UpdatePhysics(DeltaTime: Single);
@@ -112,6 +116,11 @@ type
     /// <summary> Sends the entity to a specific rectangle (it will orbit the center). </summary>
     procedure SendToRect(const R: TRectF);
 
+    /// <summary> Moves only the goal of an already active entity to P, leaving
+    /// state, alpha and trail history untouched so a per-frame retarget keeps
+    /// the tail flowing. Activates the entity when it is still idle. </summary>
+    procedure FollowPoint(const P: TPointF);
+
     /// <summary> Stops the entity immediately. </summary>
     procedure Stop;
 
@@ -125,6 +134,13 @@ type
 
     /// <summary> Call this every frame to update logic. </summary>
     procedure Update(DeltaTime: Single; const Obstacles: TArray<TObstacle>);
+
+    /// <summary> Union of the entity's current bounds (head + tail, plus
+    /// glow margin) with the previous frame's rect, clamped to the screen
+    /// bounds. Call after Update, before Draw - the host clips its canvas
+    /// to this so only the touched region is rasterized. Returns an empty
+    /// rect while the entity is idle / invisible. </summary>
+    function GetDirtyRect: TRect;
 
     /// <summary> Call this inside the OnPaint event to render. </summary>
     procedure Draw(const Canvas: ISkCanvas);
@@ -160,10 +176,10 @@ begin
   FState := ssIdle;
   FSelfDestruct := False;
   FStyle := asSnake;
-  FActiveCountdown := 0;
   FSavedNormalColor := TAlphaColors.Cyan; // Default persistent color
   FCollisionEnabled := True;
   FStuckCounter := 0;
+  FLastDirtyRect := TRectF.Create(0, 0, 0, 0);
 
   // Initialize Bounds (Defaults to 1080p, updated by Main Form)
   FBounds := TRectF.Create(0, 0, 1920, 1080);
@@ -240,6 +256,10 @@ begin
   if Assigned(FSnake.PathHistory) then
     FSnake.PathHistory.Clear;
 
+  { Idle: next activation starts with a clean dirty rect; the last
+    painted region was already covered by the previous GetDirtyRect. }
+  FLastDirtyRect := TRectF.Create(0, 0, 0, 0);
+
   // Reset visual targets to default
   FSnake.ScaleTarget := 1.0;
   FSnake.ThicknessTarget := 5.0;
@@ -263,7 +283,6 @@ begin
   ResetToIdle;
   FState := ssApproaching;
   FActive := True;
-  FActiveCountdown := 10.0;
 
   // Set Target
   FSnake.TargetRect := TRectF.Create(P.X, P.Y, P.X + 1, P.Y + 1);
@@ -275,6 +294,24 @@ begin
   FSnake.ThicknessTarget := 5.0;
 end;
 
+procedure TAliveHighlighter.FollowPoint(const P: TPointF);
+begin
+  if FState = ssExiting then
+    Exit;
+
+  // Idle entity: a plain SendToPoint bootstraps state, countdown and alpha.
+  if not FActive or (FState = ssIdle) then
+  begin
+    SendToPoint(P);
+    Exit;
+  end;
+
+  // Active entity: only move the goal. No state reset, no alpha / trail wipe,
+  // so calling this every frame just re-aims the running approach / orbit.
+  FSnake.TargetRect := TRectF.Create(P.X, P.Y, P.X + 1, P.Y + 1);
+  FSnake.CurrentWayPoint := P;
+end;
+
 procedure TAliveHighlighter.SendToRect(const R: TRectF);
 begin
   if FState = ssExiting then
@@ -283,7 +320,6 @@ begin
   // Note: We do not fully reset here to preserve the tail if moving between targets quickly
   FState := ssApproaching;
   FActive := True;
-  FActiveCountdown := 10.0;
 
   // Set Target to the center of the rect
   FSnake.TargetRect := R;
@@ -839,6 +875,45 @@ begin
   UpdateAI(Obstacles);
   // Then calculate physics
   UpdatePhysics(DeltaTime);
+end;
+
+function TAliveHighlighter.GetDirtyRect: TRect;
+var
+  CurRect: TRectF;
+  I: Integer;
+  Margin: Single;
+begin
+  { Idle / fully faded entity touches nothing: hand back an empty rect so
+    the host clips to nothing. }
+  if (not FActive) or (FSnake.Alpha <= 0.01) or (not Assigned(FSnake.PathHistory)) then
+    Exit(TRect.Create(0, 0, 0, 0));
+
+  { Current footprint: head plus every tail point, padded by the glow
+    margin. HeadRadius mirrors Draw's head disc (Thickness * 1.5); the
+    extra +45 covers the outer glow, the tail's stroke thickness and the
+    short crackle sparks around the head. }
+  Margin := FSnake.Thickness * 1.5 + 45.0;
+  CurRect := TRectF.Create(FSnake.HeadPos.X - Margin, FSnake.HeadPos.Y - Margin,
+    FSnake.HeadPos.X + Margin, FSnake.HeadPos.Y + Margin);
+  for I := 0 to FSnake.PathHistory.Count - 1 do
+    UnionRect(CurRect, CurRect, TRectF.Create(FSnake.PathHistory[I].X - Margin,
+      FSnake.PathHistory[I].Y - Margin, FSnake.PathHistory[I].X + Margin,
+      FSnake.PathHistory[I].Y + Margin));
+
+  { Union with the previous frame's rect: while the head races ahead the
+    new rect does not yet contain the old tail positions (they fade out
+    one history entry at a time), so without this the last painted pixels
+    would linger outside the new clip. }
+  if not FLastDirtyRect.IsEmpty then
+    UnionRect(CurRect, CurRect, FLastDirtyRect);
+  FLastDirtyRect := CurRect;
+
+  { The renderer draws in the host's buffer space, so intersect with the
+    screen bounds to keep the clip inside the canvas. An empty
+    intersection (entity fully outside the screen) yields an empty rect. }
+  if not IntersectRect(CurRect, CurRect, FBounds) then
+    Exit(TRect.Create(0, 0, 0, 0));
+  Result := TRect.Create(Trunc(CurRect.Left), Trunc(CurRect.Top), Ceil(CurRect.Right), Ceil(CurRect.Bottom));
 end;
 
 procedure TAliveHighlighter.DrawCrackle(const Canvas: ISkCanvas; const Center: TPointF);

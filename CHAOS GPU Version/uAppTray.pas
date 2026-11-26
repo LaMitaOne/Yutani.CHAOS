@@ -60,6 +60,7 @@ const
   IDM_MOUSEFOLLOW = 1014;
   IDM_STAYONTOP = 1015;
   IDM_CLICKTHROUGH = 1016;
+  IDM_AUTODIM = 1017;
 
 function TrayWndProc(hWnd: hWnd; Msg: UINT; wParam: wParam; lParam: lParam): LRESULT; stdcall;
 var
@@ -193,6 +194,7 @@ begin
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.MouseFollow), IDM_MOUSEFOLLOW, PChar('Mouse follow'));
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.StayOnTop), IDM_STAYONTOP, PChar('Stay on top'));
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.ClickThrough), IDM_CLICKTHROUGH, PChar('Click-through'));
+  AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.AutoDimOnHover), IDM_AUTODIM, PChar('Auto-dim on hover'));
   AppendMenuW(hXMenu, MF_SEPARATOR, 0, nil);
   AppendMenuW(hXMenu, MF_STRING, IDM_EXIT, PChar('Exit'));
   { SetForegroundWindow + a trailing WM_NULL is the documented workaround so
@@ -246,6 +248,9 @@ begin
     IDM_CLICKTHROUGH:
       if Assigned(GChaos) then
         GChaos.ClickThrough := not GChaos.ClickThrough;
+    IDM_AUTODIM:
+      if Assigned(GChaos) then
+        GChaos.AutoDimOnHover := not GChaos.AutoDimOnHover;
     { Exit plays the despawn animation first, then quits once it completes
       (see TSkChaos.QuitAfterDespawn / the csFading state machine). }
     IDM_EXIT:

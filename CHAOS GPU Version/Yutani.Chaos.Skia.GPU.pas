@@ -1,7 +1,6 @@
 unit Yutani.Chaos.Skia.GPU;
-
 {==============================================================================*
- *  Yutani C.H.A.O.S. Skia GPU v0.41 - Holographic AI Desktop Overlay
+ *  Yutani C.H.A.O.S. Skia GPU v0.42 - Holographic AI Desktop Overlay
  *------------------------------------------------------------------------------
  *  Module : Yutani.Chaos.Skia.GPU
  *  Type   : GPU-Accelerated Holographic AI Interface & Desktop Canvas
@@ -10,24 +9,28 @@ unit Yutani.Chaos.Skia.GPU;
  *  Description:
  *  This unit renders a dynamic, holographic AI avatar ("Chaos") and free-form
  *  desktop projections using an OpenGL 4.3 Compute Shader pipeline. Particle
- *  spring physics, 3D perspective projection with anatomical neck-pivot or
- *  rigid head tracking, depth-based volumetric shading, and soft radial glow
- *  splatting are executed entirely on the GPU via SSBOs and coherent image
- *  load/store operations. Supports procedural faces, 3D meshes (.glb/.obj)
- *  with sub-mesh filtering, per-part colour tints, an independent inner-core /
- *  brain mesh layer with dedicated appearance parameters, five distinct shader
- *  styles (Hologram, Android Circuit, Cyber Matrix, Blueprint, Solid),
- *  eye-name-detected smooth dim-blinking, jaw-hinge mouth animation with
- *  speech-energy glow, and photo-to-particle targets.
+ *  spring physics, interactive 3D cursor force-field displacement/swirl,
+ *  3D perspective projection with anatomical neck-pivot or rigid head tracking,
+ *  depth-based volumetric shading, and soft radial glow splatting are executed
+ *  entirely on the GPU via SSBOs and coherent image load/store operations.
+ *  Supports procedural faces, 3D meshes (.glb/.obj) with sub-mesh filtering,
+ *  per-part colour tints, an independent inner-core / brain mesh layer with
+ *  instant SSBO offset/scale updates, five distinct shader styles (Hologram,
+ *  Android Circuit, Cyber Matrix, Blueprint, Solid), automatic or custom eye
+ *  sub-mesh dim-blinking with randomized intervals and double-blinks, idle
+ *  breathing & saccadic micro-glances, jaw-hinge mouth animation with speech-
+ *  energy glow, and photo-to-particle targets.
  *
  *  Composited via Skia onto a transparent, click-through FireMonkey layered
- *  window with interactive mouse dragging, live avatar resizing, an integrated
- *  organic Skia screen highlighter, full formation/dissolve states, and
- *  adaptive FPS. Complete per-head setups (mesh pair, style, appearance,
- *  animation pacing, overlay placement, per-part tints and visibility)
- *  serialize to INI presets with automatic per-mesh restoration and startup
- *  session continuation via last.ini.
+ *  window with auto-dim on cursor hover, interactive mouse dragging, live
+ *  avatar resizing, a decoupled fullscreen Skia screen highlighter with
+ *  DirtyRect clipping, full formation/dissolve states (0% load when despawned),
+ *  and adaptive FPS. Complete per-head setups (mesh pair, orientation, style,
+ *  appearance, behavior toggles, overlay placement, per-part tints and
+ *  visibility) serialize to INI presets with automatic per-mesh restoration,
+ *  auto-save on exit, and startup session continuation via last.ini.
  *==============================================================================}
+
 
 
 interface
@@ -106,9 +109,11 @@ const
     holographic fade instead of a geometric lid displacement. }
   PARTICLE_FLAG_EYE = $00000200;
 
-  { Curated demo meshes probed next to the executable at startup. The .dae
-    COLLADA variant is not handled by the mesh loader; ship the .glb export. }
-  ASSET_PROBE_LIST: array[0..1] of string = ('angelica.glb', 'scifi_girl_v.01.glb');
+  { Auto-dim on mouseover: alpha multiplier the avatar eases to while the
+    cursor hovers its screen rect (0.22 keeps the avatar visible but easy
+    to see through), and the interpolation speed in 1/s units. }
+  AUTO_DIM_ALPHA = 0.22;
+  AUTO_DIM_SPEED = 8.0;
 
 type
   TChaosState = (csIdle, csForming, csActive, csFading, csFinished);
@@ -249,6 +254,12 @@ type
       current. Doing it on the UI thread silently fails because
       wglGetCurrentContext() is 0 there. }
     FSSBODirty: Boolean;
+    { Serializes every access to FParticleCPU / FParticleCount / FSSBODirty
+      between the UI thread (mesh loads, tint rewrites, budget retunes) and
+      the render thread (SSBO upload, forming init). Without it the startup
+      mesh build races the first RenderEffect passes and the interleaved
+      writes stall the forming animation for a second or two. }
+    FDataLock: TCriticalSection;
     FParticleProgram: Cardinal;
     FClearProgram: Cardinal;        // clears output texture per frame
     FLocP_DeltaTime, FLocP_Time, FLocP_Resolution: Integer;
@@ -289,6 +300,15 @@ type
     FStayOnTop: Boolean;
   { Master switch for the procedural blink in RenderEffect (default True). }
     FAutoBlink: Boolean;
+    { Feature toggles for isolated measurement / disabling, default True.
+      MouseForceField = False parks the cursor marker outside the shader
+      (uMouseLocal = (-9999, -9999)) and stops velocity tracking, so the
+      touch force field costs exactly nothing. IdleLifeMotion = False
+      zeroes the idle head drift and the saccade offsets, freezing the
+      rest pose. NaturalBlinking = False pins FBlinkPhase at 0 and skips
+      the blink timer entirely. }
+    FMouseForceField: Boolean;
+    FIdleLifeMotion: Boolean;
     FClickThrough: Boolean;
     FLookTargetX, FLookTargetY: Single;
     FCurrentMeshFile: string;
@@ -312,6 +332,10 @@ type
       "load every part that survives the exclude keyword list"; non-empty means
       only meshes whose name contains one of these keywords are emitted. }
     FMeshIncludeNames: TArray<string>;
+    { Name of the mesh part to force-flag as the eyes, overriding the
+      automatic "eye" name heuristic. Empty or '(Auto)' keeps the automatic
+      detection; any other value must match a MeshNames entry exactly. }
+    FCustomEyePartName: string;
     FPivotY: Single;
     FNeckPivotRatio: Single;
     FGlobalTime: Double;
@@ -327,18 +351,75 @@ type
     FHeadCenter: TPoint3D;
     FHeadSize: TPoint3D;
   { Auto-blink: procedural eye blink driven in RenderEffect. FBlinkTimer
-    counts up in seconds; every BlinkInterval it triggers BlinkDuration
-    seconds of mostly-closed eyes. FBlinkPhase runs 0..1 through the blink
-    (0 = open, 1 = closed) and is applied as a factor onto FEyeOpeness so
-    a manually set EyeOpeness still scales correctly. }
+    counts up in seconds; once it passes the current inter-blink pause a
+    blink of BlinkDuration seconds runs. FBlinkPhase runs 0..1 through the
+    blink (0 = open, 1 = closed) and is applied as a factor onto
+    FEyeOpeness so a manually set EyeOpeness still scales correctly.
+    Natural irregularity: FNextBlinkDelay is re-rolled after every blink
+    (1.8-6.2 s, power-distributed toward shorter pauses; ~18 % of blinks
+    chain into a double blink after only 0.14-0.22 s), and the single
+    blink length itself varies by +-25 ms around BlinkDuration, so the
+    rhythm never reads as a metronome. The old BlinkInterval property is
+    gone; old presets carrying the key are simply ignored on load - the
+    natural re-roll owns every pause. }
     FBlinkTimer: Double;
     FBlinkPhase: Single;
-  { Auto-blink timing in seconds, exposed through the BlinkInterval /
-    BlinkDuration properties so the controls panel can tune them live. }
-    FBlinkInterval: Single;
+    FNextBlinkDelay: Single;
+    FDoubleBlinkPending: Boolean;
+    { Length of the currently running blink (BlinkDuration base varied by
+     +-25 ms per blink); starts at the property default until the first
+     completed blink re-rolls it. }
+    FCurrentBlinkDuration: Single;
     FBlinkDuration: Single;
     FChaosLevel, FMouthOpen, FEyeOpeness: Single;
     FLookX, FLookY: Single;
+    { Idle-life state: a resting cursor (or MouseFollow off) must not freeze
+      the avatar. FMouseStillTimer counts the seconds the cursor stayed
+      within 2 px (mouse sampling jitter tolerance); past 1.4 s FIdleBlend
+      crossfades the multi-sinus head drift in. FSaccadeTimer paces
+      unregular fixation changes - mostly tiny micro-saccades, occasionally
+      a distinct sideways "thinking" glance. The rolled offsets are chase
+      targets for FSaccadeSmoothX/Y, which ease toward them at 10/s so the
+      head (eyes included - they rotate rigidly with it) glides into the
+      new fixation instead of snapping within a single frame. }
+    FSaccadeTimer: Single;
+    FSaccadeOffsetX, FSaccadeOffsetY: Single;
+    FSaccadeSmoothX, FSaccadeSmoothY: Single;
+    FLastCursorPos: TPoint;
+    FMouseStillTimer: Single;
+    FIdleBlend: Single;
+    { Mouse touch force field: cursor position converted into buffer
+      coordinates plus its smoothed velocity, uploaded as uMouseLocal /
+      uMouseVel. (-9999, -9999) marks "outside the control" so the shader's
+      radius test never fires; the velocity decays while outside. }
+    FMouseLocalX, FMouseLocalY: Single;
+    FMouseVelX, FMouseVelY: Single;
+    FMouseInside: Boolean;
+    { Thread-safe screen geometry: the control's top-left in screen
+      coordinates plus its size, refreshed by RefreshScreenGeometry on
+      the UI thread (every Draw, on ParentChanged, while dragging and on
+      avatar resize). The background render thread turns the raw
+      GetCursorPos sample into control coordinates with pure subtraction
+      against these caches - LocalToScreen / ScreenToLocal walk the FMX
+      scene tree and must never run off the UI thread. X and Y are
+      written in order, so the worst torn read is one stale coordinate
+      for a single frame, corrected by the next refresh. }
+    FScreenOrigin: TPoint;
+    FControlW, FControlH: Single;
+    { Auto-dim: current interpolated alpha multiplier applied on top of
+      HoloAlpha. Eases toward AUTO_DIM_ALPHA while the cursor hovers the
+      avatar rect and back to 1.0 when it leaves. }
+    FCurrentHoverAlphaMul: Single;
+    FAutoDimOnHover: Boolean;
+    { Highlighter mouse-follow mode: when on, RenderEffect feeds the live
+      cursor position (converted into the control's local frame) to the
+      highlighter every frame so it keeps stalking the mouse. }
+    FHighlightFollowMouse: Boolean;
+    { Fired on the UI thread whenever something activates the highlighter
+      (HighlightPoint / HighlightRect / enabling HighlightFollowMouse) so
+      the full-desktop overlay host can switch itself visible immediately
+      instead of waiting for its sleeping render loop to notice. }
+    FOnHighlighterWake: TNotifyEvent;
     FEmotionMode: TEmotionMode;
     FAccentColor, FEyeColor, FMouthColor, FFaceColor: TAlphaColor;
     { Alive highlighter entity (organic light-snake overlay) drawn on top of
@@ -407,6 +488,12 @@ type
     FInnerCoreScale: Single;
     FInnerCoreOffsetY: Single;
     FInnerCoreBudget: Cardinal;
+    { Slice markers of the custom inner core inside FParticleCPU, written
+      by BuildMeshTargets (FInnerCoreCount = 0 while no core is emitted):
+      UpdateInnerCoreTargets rewrites exactly this index range when scale
+      or offset change, without touching the outer cloud. }
+    FInnerCoreStartIdx: Integer;
+    FInnerCoreCount: Integer;
     { Appearance split between the outer shell and the inner core: glow
       intensity, particle size, glow-kernel softness and rim falloff power.
       The inner set keeps the brain from over-glowing behind the eyes /
@@ -440,6 +527,10 @@ type
     FLocH_DeltaTime, FLocH_Time, FLocH_Resolution: Integer;
     FLocH_ParticleCount, FLocH_State, FLocH_BuildScanY, FLocH_DespawnScanY: Integer;
     FLocH_LookX, FLocH_LookY, FLocH_PivotY: Integer;
+    { Mouse touch-force uniforms: uMouseLocal is the cursor in buffer
+      coordinates (-9999 = outside), uMouseVel its smoothed velocity in
+      buffer pixels per second. }
+    FLocH_MouseLocal, FLocH_MouseVel: Integer;
     { Locations of the precomputed head-rotation trig endpoint uniforms
       (uTrigY / uTrigX, vec4 each). The CPU computes cos/sin once per frame;
       the shader mixes these endpoints per particle instead of evaluating
@@ -492,6 +583,13 @@ type
     procedure SetInnerCore(const Value: Boolean);
     procedure SetInnerCoreScale(const Value: Single);
     procedure SetInnerCoreOffsetY(const Value: Single);
+    { Instant retarget of the custom inner core after a scale / offset
+      change: rewrites only the TX/TY/TZ of the core slice inside
+      FParticleCPU under FDataLock and flags the SSBO dirty, so the live
+      cloud morphs to the new placement without a rebuild and without
+      restarting the forming animation. No-op unless a custom core mesh
+      with points is active. }
+    procedure UpdateInnerCoreTargets;
     procedure SetInnerCoreBudget(const Value: Cardinal);
     procedure SetParticleBudget(const Value: Cardinal);
     procedure SetNeckPivotRatio(const Value: Single);
@@ -516,10 +614,6 @@ type
     function FindOwnerForm: TForm;
     procedure ApplyStayOnTop;
     procedure BuildMeshTargets(const APoints: TArray<TMeshParticlePoint>);
-    { Rebuilds the particle cloud from the current source points (flags,
-      colours and inner-core placement are baked per build) and restarts
-      the forming animation, shared by the inner-core setters and loaders. }
-    procedure RebuildTargetCloud;
     { Folds the head min/max fields into FHeadCenter / FHeadSize and clamps
       the size components to >= 1 so the shader's rel = (tgt - center) / size
       division can never blow up on a degenerate (flat) dimension. Called at
@@ -548,9 +642,21 @@ type
     procedure SetMouthState(const Value: TMouthState);
     procedure SetEyeState(const Value: TEyeState);
     procedure SetEmotionMode(const Value: TEmotionMode);
-    procedure SetBlinkInterval(const Value: Single);
     procedure SetBlinkDuration(const Value: Single);
+    procedure SetNaturalBlinking(const Value: Boolean);
+    procedure SetHighlightFollowMouse(const Value: Boolean);
+    { UI-thread helper: re-show the control after the csFinished render
+      sleep hid it. Called by every path that restarts the forming
+      animation (Spawn, mesh / photo / depth-map loads, budget and
+      rebuild paths). }
+    procedure EnsureVisibleForSpawn;
   protected
+    { UI thread only: re-caches FScreenOrigin / FControlW / FControlH
+      from the live control geometry so the background render thread can
+      convert cursor samples with plain arithmetic. Never call from
+      RenderEffect - it runs on the render thread. }
+    procedure RefreshScreenGeometry;
+    procedure Draw(const ACanvas: ISkCanvas; const ADest: TRectF; const AOpacity: Single); override;
     procedure RenderEffect(const ACanvas: ISkCanvas; const ADest: TRectF; const ATime: Double); override;
   public
     constructor Create(AOwner: TComponent); override;
@@ -570,6 +676,13 @@ type
       generic file names (scene.glb, head.obj) never overwrite each
       other's presets. Empty while no mesh is loaded. }
     function GetAutoPresetPath: string;
+    { True when APartName is the custom eye part: an exact (case-insensitive)
+      match, or the picked name appears inside the part name, so a selection
+      that only approximates the loaded mesh's naming (e.g. "Eyes" vs.
+      "LeftEye_Mesh.001") still lands on the right part. A custom name of
+      '' or '(Auto)' never matches - that keeps the automatic eye-name
+      heuristic in charge. }
+    function MatchesEyePartName(const APartName: string): Boolean;
     { Writes the complete avatar setup (mesh pair, style, animation pacing,
       overlay placement, per-part tints and visibility) to an ini file. }
     procedure SavePresetToFile(const AIniFile: string);
@@ -605,6 +718,11 @@ type
       Transparency / FormStyle changes, which drops the raw WS_EX_TRANSPARENT
       flag this sets, so the style must be re-applied once the handle is stable. }
     procedure ApplyClickThrough;
+    { Rebuilds the particle cloud from the current source points (flags,
+      colours and inner-core placement are baked per build) and restarts
+      the forming animation, shared by the inner-core setters, loaders and
+      the eye-part override in the controls panel. }
+    procedure RebuildTargetCloud;
     { Per-part colour override for the loaded mesh. AIndex indexes MeshNames
       (the same order the controls panel's parts list shows). $00000000 clears
       the override and returns the part to the default style / face colour;
@@ -656,20 +774,46 @@ type
     { Procedural auto-blink on top of the manual EyeOpeness state; the blink
       factor multiplies FEyeOpeness, so both stay controllable. }
     property AutoBlink: Boolean read FAutoBlink write FAutoBlink default True;
-    { Auto-blink timing: seconds between blinks (default 3.5) and blink
-      length in seconds (default 0.38), inside the natural 2-10 s /
-      100-400 ms range of human reflex blinking. }
-    property BlinkInterval: Single read FBlinkInterval write SetBlinkInterval;
+    { Natural blinking (rename of the legacy AutoBlink flag, same
+      semantics): False pins the eyes open and skips the blink timer. }
+    property NaturalBlinking: Boolean read FAutoBlink write SetNaturalBlinking default True;
+    { Touch force field / mouse swirl in the holo shader, default on. }
+    property MouseForceField: Boolean read FMouseForceField write FMouseForceField default True;
+    { Idle breathing drift + micro-saccades while the cursor rests. }
+    property IdleLifeMotion: Boolean read FIdleLifeMotion write FIdleLifeMotion default True;
+    { Auto-blink timing: blink length in seconds (default 0.38), inside
+      the natural 100-400 ms range of human reflex blinking. The pause
+      rhythm is fully automatic (see FNextBlinkDelay). }
     property BlinkDuration: Single read FBlinkDuration write SetBlinkDuration;
     property EmotionMode: TEmotionMode read FEmotionMode write SetEmotionMode;
     property HighlightActive: Boolean read FHighlightActive write FHighlightActive;
     { Alive-highlighter overlay control: send the entity to a screen point
       or rectangle (it flies there and orbits), or dismiss it with its exit
-      animation. The entity is drawn every frame in RenderEffect, tinted
-      with AccentColor. }
+      animation. The entity itself is drawn by a full-desktop overlay
+      control through RenderHighlighterOverlay, tinted with AccentColor. }
     procedure HighlightPoint(AX, AY: Single);
     procedure HighlightRect(const ARect: TRectF);
     procedure DismissHighlight;
+    { True while the alive highlighter entity is on (or leaving) the
+      desktop: a full-screen overlay control uses this to skip its render
+      loop work entirely when there is nothing to draw. }
+    function HighlighterBusy: Boolean;
+    { Publishes the highlighter's wall model to the full-desktop overlay
+      control: bounds mirror the overlay's client size (the whole screen),
+      not this avatar control's small rect, so the entity can travel
+      across the entire desktop instead of being clipped to the avatar. }
+    procedure SetHighlighterBounds(AWidth, AHeight: Single);
+    { Advances mouse-follow (cursor already converted into the overlay's
+      coordinate frame by the caller), steps the entity's logic and draws
+      it onto the overlay canvas. Runs on the overlay's render thread with
+      that frame's delta time; call every frame while HighlighterBusy (or
+      HighlightFollowMouse) is True. }
+    procedure RenderHighlighterOverlay(const ACanvas: ISkCanvas; ADeltaTime: Single; AMouseX, AMouseY: Single; AHasMouse: Boolean);
+    { Union of the highlighter entity's current and previous footprint,
+      clamped to the screen bounds - lets the overlay host clip its
+      canvas so only the ~entity-sized region is rasterized instead of
+      the entire desktop. Empty rect while the entity is idle. }
+    function HighlighterDirtyRect: TRect;
     property ParticleBudget: Cardinal read FParticleBudget write SetParticleBudget;
     { Switchable visual style and live tuning knobs. }
     property HoloStyle: THoloStyle read FHoloStyle write SetHoloStyle;
@@ -722,10 +866,6 @@ type
       centre inside the parent and, for mesh sources, re-fits the particle
       clouds and the offscreen buffer to the new size. }
     procedure SetAvatarSize(AWidth: Single);
-    { Dock the avatar near a bottom corner of the parent. The default
-      margins keep it clear of the taskbar area. }
-    procedure SnapBottomRight(AMarginX: Single = 20; AMarginY: Single = 50);
-    procedure SnapBottomLeft(AMarginX: Single = 20; AMarginY: Single = 50);
     property AutoMeshFile: string read FAutoMeshFile;
     { Per-part include filter. Pass the mesh-name keywords (e.g. ['head','torso','arm_l','leg_l'])
       to load only those parts on the next LoadMeshFile call; pass nil to clear
@@ -741,6 +881,25 @@ type
       loader wrote them - drives the per-part colour list of the Inner Core
       tab. Empty while no core mesh is loaded. }
     property InnerMeshNames: TArray<string> read FInnerMeshResult.MeshNames;
+    { Forces the mesh part with this exact name to carry PARTICLE_FLAG_EYE,
+      overriding the automatic eye-name heuristic in BuildMeshTargets. Set to
+      '' or '(Auto)' to return to the automatic detection; changes apply on
+      the next rebuild of the particle cloud. }
+    property CustomEyePartName: string read FCustomEyePartName write FCustomEyePartName;
+    { Alive highlighter: when True, the full-desktop overlay converts the
+      live cursor position into its own frame every frame and keeps the
+      highlighter stalking it, without re-triggering the spawn so the tail
+      stays fluid. }
+    property HighlightFollowMouse: Boolean read FHighlightFollowMouse write SetHighlightFollowMouse;
+    { UI hook for the full-desktop overlay host: fires on the UI thread
+      whenever the highlighter is activated (highlight send or follow
+      toggle), letting the host un-hide its sleeping control at once. }
+    property OnHighlighterWake: TNotifyEvent read FOnHighlighterWake write FOnHighlighterWake;
+    { Auto-dim on mouseover: eases the avatar's alpha multiplier toward
+      AUTO_DIM_ALPHA while the cursor is over the control's screen rect and
+      back to full when it leaves. Works through GetCursorPos, so it also
+      fires while the window is click-through (WS_EX_TRANSPARENT). }
+    property AutoDimOnHover: Boolean read FAutoDimOnHover write FAutoDimOnHover;
   end;
 
 implementation
@@ -809,6 +968,11 @@ const
     'struct Particle {'#10 + '  float px, py, pz;'#10 + '  float vx, vy, vz;'#10 + '  float tx, ty, tz;'#10 + '  uint  color;'#10 + '  uint  flags;'#10 + '  uint  pad0, pad1;'#10 + '};'#10 + 'layout(std430, binding = 0) buffer SSBO { Particle P[]; };'#10 + 'layout(rgba8, binding = 0) coherent uniform image2D uOutput;'#10 + ''#10 +
     // CPU uniforms: timing, resolution, state machine, look/pivot, style, palette.
     'uniform float uDeltaTime;'#10 + 'uniform float uTime;'#10 + 'uniform vec2  uResolution;'#10 + 'uniform uint  uParticleCount;'#10 + 'uniform int   uState;'#10 + 'uniform float uBuildScanY;'#10 + 'uniform float uDespawnScanY;'#10 + 'uniform float uLookX;'#10 + 'uniform float uLookY;'#10 + 'uniform float uPivotY;'#10 + 'uniform int   uHoloStyle;'#10 + 'uniform float uParticleSize;'#10 + 'uniform float uGlowIntensity;'#10 + 'uniform float uRimLightStrength;'#10 + 'uniform float uAlpha;'#10 + 'uniform float uJitter;'#10 + 'uniform vec4  uFaceColor;'#10 + 'uniform vec4  uAccentColor;'#10 +
+    // Touch force field: uMouseLocal is the cursor in buffer coordinates,
+    // (-9999, -9999) while it is outside the control so the radius test
+    // below never fires; uMouseVel is its smoothed velocity in buffer
+    // pixels per second, driving the carry-along swirl.
+    'uniform vec2  uMouseLocal;'#10 + 'uniform vec2  uMouseVel;'#10 + ''#10 +
     // uTrigY/uTrigX: cos/sin of the neck-pivot rotation at the smoothstep
     // weight endpoints (head w=1, shoulders w=0) - precomputed on the CPU so
     // project3D costs zero trig per particle.
@@ -863,17 +1027,40 @@ const
     // Procedural inner-core points hug the head centre (0.55 shrink); a
     // custom core mesh keeps its own scale / offset placement.
     '  if (innerCore && uCustomInnerMesh == 0) tgt *= 0.55;'#10 + ''#10 + '  bool visible = true;'#10 + '  bool falling = false;'#10 +
+    // Single shared projection: p2 / center are computed exactly once per
+    // particle. Falling particles project after their gravity step; visible
+    // particles before the spring integration, so the same screen
+    // coordinates drive the mouse touch force below AND the pixel splat
+    // further down - the second project3D call is gone.
+    '  vec2 p2 = vec2(0.0);'#10 + '  vec2 center = vec2(0.0);'#10 +
     // State machine: 0 = forming (reveal up to build scanline), 2 = fading (drop below despawn scanline).
     '  if (uState == 0) { if (tgt.y > uBuildScanY) visible = false; } else if (uState == 2) { if (pos.y <= uDespawnScanY) { if (vel.y < 1.0) vel.y = 240.0 + 140.0 * rand(float(idx)); falling = true; } }'#10 +
     // Falling: gravity carries the particle down and out of the viewport.
-    '  if (falling) {'#10 + '    vel.y += 700.0 * dt;'#10 + '    pos += vel * dt;'#10 +
+    '  if (falling) {'#10 + '    vel.y += 700.0 * dt;'#10 + '    pos += vel * dt;'#10 + '    p2 = project3D(pos);'#10 + '    center = toScreenFloat(p2);'#10 +
     // Otherwise spring toward target; add hover drift and per-style jitter.
-    '  } else if (visible) {'#10 + '    vec3 d = tgt - pos;'#10 + '    float stiff = 220.0;'#10 + '    float damp = 18.0;'#10 + '    vel += (d * stiff - vel * damp) * dt;'#10 + '    pos += vel * dt;'#10 + '    if (uState == 1) {'#10 + '      vec3 hover = vec3(sin(uTime * 1.3 + float(idx) * 0.37),'#10 + '                        cos(uTime * 1.1 + float(idx) * 0.53), 0.0) * 0.4;'#10 + '      pos += hover * dt;'#10 + '    }'#10 + '    pos += vec3(rand(float(idx) + uTime) - 0.5,'#10 +
+    '  } else if (visible) {'#10 + '    vec3 d = tgt - pos;'#10 + '    float stiff = 220.0;'#10 + '    float damp = 18.0;'#10 +
+    // Touch force field: while the cursor is over the control, particles
+    // within 58 px of it (screen space) get a strong, soft radial push plus
+    // a carry-along in the cursor's direction of travel, a spatial dent in
+    // Z so the cloud reads as truly 3D-displaced, and the return spring
+    // locally yields (stiff reduced by up to 88 % at the cursor, damping
+    // eased by 55 %) so the cloud genuinely gives way instead of trembling
+    // against the force. The shared projection above (p2 / center) doubles
+    // as the screen-space position; once the cursor moves on, the
+    // untouched spring pulls everything organically back into the face.
+    '    p2 = project3D(pos);'#10 + '    center = toScreenFloat(p2);'#10 + '    if (uState <= 1) {'#10 + '      if (uMouseLocal.x > -9000.0) {'#10 + '        vec2 diff = center - uMouseLocal;'#10 + '        float dist = length(diff);'#10 + '        float radius = 58.0;'#10 + '        if (dist < radius && dist > 0.001) {'#10 + '          float falloff = pow(1.0 - dist / radius, 1.5);'#10 + '          stiff *= (1.0 - 0.88 * falloff);'#10 + '          damp *= (1.0 - 0.55 * falloff);'#10 + '          vel.xy += normalize(diff) * falloff * 1800.0 * dt;'#10 + '          vel.xy += uMouseVel * falloff * 3.5 * dt;'#10 + '          vel.z += falloff * 320.0 * dt;'#10 + '        }'#10 + '      }'#10 + '    }'#10 + '    vel += (d * stiff - vel * damp) * dt;'#10 + '    pos += vel * dt;'#10 + '    if (uState == 1) {'#10 + '      vec3 hover = vec3(sin(uTime * 1.3 + float(idx) * 0.37),'#10 + '                        cos(uTime * 1.1 + float(idx) * 0.53), 0.0) * 0.4;'#10 + '      pos += hover * dt;'#10 + '    }'#10 + '    pos += vec3(rand(float(idx) + uTime) - 0.5,'#10 +
     '                rand(float(idx) * 1.7 + uTime) - 0.5,'#10 + '                rand(float(idx) * 2.3 + uTime) - 0.5) * uJitter;'#10 + '    if (uHoloStyle == 2) {'#10 + '      pos += vec3(rand(float(idx) * 0.5 + uTime * 0.7) - 0.5,'#10 + '                  rand(float(idx) * 0.9 + uTime * 0.5) - 0.5, 0.0) * 0.9;'#10 + '    }'#10 + '  }'#10 +
     // Write back position and velocity.
     '  P[idx].px = pos.x; P[idx].py = pos.y; P[idx].pz = pos.z;'#10 + '  P[idx].vx = vel.x; P[idx].vy = vel.y; P[idx].vz = vel.z;'#10 + '  if (!visible) return;'#10 + ''#10 +
     // Project to screen and cull particles outside the viewport.
-    '  vec3 normal = decodeNormal(P[idx].pad0, P[idx].pad1);'#10 + '  vec2 p2 = project3D(pos);'#10 + '  vec2 center = toScreenFloat(p2);'#10 + '  ivec2 basePx = ivec2(round(center));'#10 + '  int resX = int(uResolution.x);'#10 + '  int resY = int(uResolution.y);'#10 + '  if (basePx.x < -9 || basePx.x >= resX + 9 ||'#10 + '      basePx.y < -9 || basePx.y >= resY + 9) return;'#10 + ''#10 + '  float rawDepth = clamp(pos.z / 110.0, 0.0, 1.0);'#10 + '  float depth = rawDepth * rawDepth;'#10 + ''#10 +
+    '  vec3 normal = decodeNormal(P[idx].pad0, P[idx].pad1);'#10 +
+    // Project to screen and cull particles outside the viewport. p2/center
+    // were already computed above (before the spring for visible
+    // particles, after the gravity step for falling ones) - no second
+    // project3D call. Eye particles no longer shift separately: they
+    // rotate rigidly with the head, so isEye now only drives the
+    // dim-blink below.
+    '  ivec2 basePx = ivec2(round(center));'#10 + '  int resX = int(uResolution.x);'#10 + '  int resY = int(uResolution.y);'#10 + '  if (basePx.x < -9 || basePx.x >= resX + 9 ||'#10 + '      basePx.y < -9 || basePx.y >= resY + 9) return;'#10 + ''#10 + '  float rawDepth = clamp(pos.z / 110.0, 0.0, 1.0);'#10 + '  float depth = rawDepth * rawDepth;'#10 + ''#10 +
     // Rim light from the surface normal; facing fades the body, rim highlights edges.
     // Rim edge factor: the exponent shapes the falloff (2.0 = squared), so
     // it doubles as the "rim power" knob; inner-core particles take their
@@ -945,15 +1132,44 @@ begin
   FScaleFactor := 0.75;   // match CPU original
   FMouthOpen := 0.15;
   FEyeOpeness := 1.0;
-  { Auto-blink defaults to on; FBlinkPhase = 0 = eyes open. The 3.5 s
-    interval sits inside the natural human reflex-blink range; the 0.38 s
-    duration keeps the eased phase curve resolvable even at the 15 FPS
-    idle frame rate. Both stay tunable via BlinkInterval / BlinkDuration. }
+  { Auto-blink defaults to on; FBlinkPhase = 0 = eyes open. The first
+    inter-blink pause starts at 3.5 s, then FNextBlinkDelay re-rolls
+    naturally (1.8-6.2 s, ~18 % double blinks) - the old interval slider
+    and its property are gone entirely; preset files still carrying the
+    BlinkInterval key are silently ignored. The 0.38 s base duration
+    keeps the eased phase curve resolvable even at the 15 FPS idle frame
+    rate and varies by +-25 ms per blink. }
   FAutoBlink := True;
+  FMouseForceField := True;
+  FIdleLifeMotion := True;
   FBlinkTimer := 0;
   FBlinkPhase := 0;
-  FBlinkInterval := 3.5;
+  FNextBlinkDelay := 3.5;
+  FDoubleBlinkPending := False;
   FBlinkDuration := 0.38;
+  FCurrentBlinkDuration := 0.38;
+  { Idle life: saccade timer starts mid-range so the first micro-jump does
+    not fire on frame one; the blend starts at 0 so a forming avatar eases
+    into its idle drift instead of snapping. The cursor seed is invalid, so
+    the first real sample counts as fresh movement. Mouse force starts
+    disabled (outside), velocity at rest. }
+  FSaccadeTimer := 1.0 + Random * 1.5;
+  FSaccadeOffsetX := 0;
+  FSaccadeOffsetY := 0;
+  FLastCursorPos := Point(-99999, -99999);
+  FMouseStillTimer := 0;
+  FIdleBlend := 0;
+  FMouseLocalX := -9999;
+  FMouseLocalY := -9999;
+  FMouseVelX := 0;
+  FMouseVelY := 0;
+  FMouseInside := False;
+  { Screen geometry cache: invalid until the first Draw / ParentChanged
+    refresh; the render thread's bounds test simply reports "outside"
+    for those early frames. }
+  FScreenOrigin := Point(0, 0);
+  FControlW := 0;
+  FControlH := 0;
   { No mesh loaded yet, so there are no per-part colour overrides. }
   FPartColors := nil;
   FEmotionMode := emNeutral;
@@ -965,7 +1181,9 @@ begin
   FEyeState := esOpen;
   FHighlightActive := False;
   { Alive highlighter entity for the organic overlay; tinted from the
-    accent colour here and refreshed every frame in RenderEffect. }
+    accent colour and advanced / drawn by the full-desktop overlay control
+    through RenderHighlighterOverlay (this control is too small to host
+    it without clipping the entity at its edges). }
   FHighlighter := TAliveHighlighter.Create;
   FHighlighter.Color := FAccentColor;
   FParticleBudget := DEFAULT_PARTICLE_BUDGET;
@@ -1018,13 +1236,15 @@ begin
   FInnerCoreScale := 0.48;
   FInnerCoreOffsetY := -12.0;
   FInnerCoreBudget := 40000;
+  FInnerCoreStartIdx := 0;
+  FInnerCoreCount := 0;
 
-  { Adaptive idle FPS: 38 FPS while the avatar speaks / animates / morphs,
-    dropping to 15 FPS after three seconds of silence. Exposed on the base
+  { Adaptive idle FPS: 50 FPS while the avatar speaks / animates / morphs,
+    dropping to 25 FPS after three seconds of silence. Exposed on the base
     class so it can be fine-tuned at runtime. }
   AdaptiveFPS := True;
-  ActiveTargetFPS := 38;
-  IdleTargetFPS := 15;
+  ActiveTargetFPS := 50;
+  IdleTargetFPS := 25;
   IdleTimeoutSec := 3.0;
   FNeckPivotRatio := 0.70;
   FContextBound := False;
@@ -1049,6 +1269,16 @@ begin
     probe, keeping the app-always-starts guarantee. }
   FStartupPresetLoaded := False;
   FHasPendingStartupPlacement := False;
+  { Eye / hover state: eyes start centred, the hover alpha multiplier starts
+    fully visible, both auto-dim and highlighter mouse-follow opt in from
+    the UI / presets. }
+  FSaccadeSmoothX := 0;
+  FSaccadeSmoothY := 0;
+  FCurrentHoverAlphaMul := 1.0;
+  FAutoDimOnHover := False;
+  FHighlightFollowMouse := False;
+  FCustomEyePartName := '';
+  FDataLock := TCriticalSection.Create;
   try
     FStartupPresetLoaded := LoadLastStartupPreset;
   except
@@ -1084,6 +1314,7 @@ begin
   inherited;
   FreeAndNil(FDepthMap);
   FreeAndNil(FHighlighter);
+  FreeAndNil(FDataLock);
 end;
 
 procedure TSkChaos.LoadDepthMap(const AFileName: string);
@@ -1109,6 +1340,7 @@ begin
       FState := csForming;
       FBuildScanY := FMinY;
       FDespawnScanY := FMinY;
+      EnsureVisibleForSpawn;
     end;
   end;
 end;
@@ -1345,6 +1577,8 @@ begin
   FLocH_DespawnScanY := FnGetUniformLocation(FHoloProgram, 'uDespawnScanY');
   FLocH_LookX := FnGetUniformLocation(FHoloProgram, 'uLookX');
   FLocH_LookY := FnGetUniformLocation(FHoloProgram, 'uLookY');
+  FLocH_MouseLocal := FnGetUniformLocation(FHoloProgram, 'uMouseLocal');
+  FLocH_MouseVel := FnGetUniformLocation(FHoloProgram, 'uMouseVel');
   FLocH_PivotY := FnGetUniformLocation(FHoloProgram, 'uPivotY');
   FLocH_HoloStyle := FnGetUniformLocation(FHoloProgram, 'uHoloStyle');
   FLocH_ParticleSize := FnGetUniformLocation(FHoloProgram, 'uParticleSize');
@@ -1523,6 +1757,10 @@ begin
   if not FDepthMap.Map(TMapAccess.Read, BitmapData) then
     Exit;
   try
+    { Same thread-safety as BuildMeshTargets: the face cloud writes the
+      shared CPU particle buffer and count. }
+    FDataLock.Enter;
+    try
     DepthW := FDepthMap.Width;
     DepthH := FDepthMap.Height;
     BudgetUsed := 0;
@@ -1587,6 +1825,9 @@ begin
       ornament rings (regions 2-4) below only add non-head particles. }
     FinalizeHeadBounds;
     FParticleCount := BudgetUsed;
+    finally
+      FDataLock.Leave;
+    end;
   finally
     FDepthMap.Unmap(BitmapData);
   end;
@@ -1598,9 +1839,14 @@ begin
     not current, so glBindBuffer / glBufferSubData would silently fail.
     Just flag the buffer as dirty; RenderEffect uploads it on the render
     thread where the context is bound. }
-  if (FParticleCount = 0) or (Length(FParticleCPU) = 0) then
-    Exit;
-  FSSBODirty := True;
+  FDataLock.Enter;
+  try
+    if (FParticleCount = 0) or (Length(FParticleCPU) = 0) then
+      Exit;
+    FSSBODirty := True;
+  finally
+    FDataLock.Leave;
+  end;
 end;
 
 procedure TSkChaos.ReinitParticlesForForming;
@@ -1608,18 +1854,27 @@ var
   I: Integer;
   P: ^TParticleCPU;
 begin
-  // Scatter every particle to a random start offset near the vertical centre
-  // so the forming animation lerps them toward their target (zoom-in effect
-  // matching the CPU version's "Pos3D := Target + Random(30)-15, -15+Random(15)").
-  for I := 0 to Integer(FParticleCount) - 1 do
-  begin
-    P := @FParticleCPU[I * SSBO_PARTICLE_SIZE];
-    P^.PX := P^.TX + (Random(30) - 15);
-    P^.PY := -15 + Random(15);
-    P^.PZ := P^.TZ;
-    P^.VX := 0;
-    P^.VY := 0;
-    P^.VZ := 0;
+  { Runs on either thread: startup loads call it from the UI thread while
+    the render thread is already dispatching, Spawn / RenderEffect call it
+    from the render thread itself. TCriticalSection is re-entrant on the
+    same thread, so nested call chains stay safe. }
+  FDataLock.Enter;
+  try
+    // Scatter every particle to a random start offset near the vertical centre
+    // so the forming animation lerps them toward their target (zoom-in effect
+    // matching the CPU version's "Pos3D := Target + Random(30)-15, -15+Random(15)").
+    for I := 0 to Integer(FParticleCount) - 1 do
+    begin
+      P := @FParticleCPU[I * SSBO_PARTICLE_SIZE];
+      P^.PX := P^.TX + (Random(30) - 15);
+      P^.PY := -15 + Random(15);
+      P^.PZ := P^.TZ;
+      P^.VX := 0;
+      P^.VY := 0;
+      P^.VZ := 0;
+    end;
+  finally
+    FDataLock.Leave;
   end;
   UploadSSBO;
 end;
@@ -1787,7 +2042,19 @@ var
   DeltaTime: Double;
   ScanSpeed: Single;
   Cur: TPoint;
-  C: TPointF;
+  C, TopLeft: TPointF;
+  Hover: Boolean;
+  TargetMul: Single;
+  { Idle life / touch force locals: CurValid gates every cursor consumer
+    behind one GetCursorPos sample; Local is that sample in control
+    coordinates; IdleTarget / IdleHead* shape the rest-pose drift;
+    NewLocal* are the buffer-space cursor coordinates for the force
+    field's velocity estimate. }
+  CurValid: Boolean;
+  Local: TPointF;
+  IdleTarget: Single;
+  IdleHeadX, IdleHeadY: Single;
+  NewLocalX, NewLocalY: Single;
 begin
   if not Active then
   begin
@@ -1797,12 +2064,36 @@ begin
   { csFinished short-circuit: the despawn animation is over and the overlay
     must stay empty, so skip the entire clear/particle/blur/readback pipeline
     (and its GL dispatches) completely - GPU load in the hidden state drops
-    to exactly zero instead of dispatching an empty frame every tick. }
+    to exactly zero instead of dispatching an empty frame every tick. The
+    control is also hidden outright: an invisible FMX control stops the
+    compositor from blending its (empty) layer, so DWM cost drops to zero
+    too. Visible flips through TThread.Queue because this runs on the
+    render thread; Spawn re-shows it. The Sleep(120) paces this branch to
+    ~8 wake-ups per second, so the render thread's CPU share sits near
+    0 % while the GL context stays warm for the next Spawn. }
   if FState = csFinished then
   begin
-    ACanvas.Clear($00000000);
+    if Visible then
+      TThread.Queue(nil,
+        procedure
+        begin
+          { Re-check on the UI thread: Spawn may have re-started the avatar
+            between queueing and delivery, and the form may already be
+            tearing down (same guard the base class uses for
+            ThreadSafeInvalidate). }
+          if (csDestroying in ComponentState) then
+            Exit;
+          if FState = csFinished then
+            Visible := False;
+        end);
+    Sleep(120);
     Exit;
   end;
+  { Guard the whole GL path against a zero-sized buffer: before the first
+    resize / mesh load settles, EnsureOutputTexture would try to create a
+    0x0 texture and the dispatch grid computation would divide by zero. }
+  if (FBufW <= 0) or (FBufH <= 0) or (FPendingBufW <= 0) or (FPendingBufH <= 0) then
+    Exit;
   if not FGLReady then
   begin
     wglMakeCurrent(0, 0);
@@ -1820,7 +2111,11 @@ begin
     else
       BuildMeshTargets(FMeshResult.Points);
     UploadSSBO;
-    FLastTime := 0;
+    { Anchor DeltaTime on the init frame: ATime is the monotonic clock the
+      base thread started long before the context existed, so without this
+      the first csForming step would consume a huge (or negative) delta and
+      the scanline jumps, which read as the sporadic startup freeze. }
+    FLastTime := ATime;
   end;
   { RenderEffect always runs on the same background render thread of
     TSkiaCustomThreadedBase and nothing else ever binds FGLContext, so the
@@ -1857,12 +2152,17 @@ begin
     // otherwise glBufferSubData silently fails and the GPU keeps rendering
     // the initial (Angelica) particle cloud no matter how often the CPU
     // buffer changes.
-  if FSSBODirty and (FParticleSSBO <> 0) and (FParticleCount > 0) and (Length(FParticleCPU) > 0) then
-  begin
-    FnBindBuffer(GL_SHADER_STORAGE_BUFFER, FParticleSSBO);
-    FnBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, NativeInt(FParticleCount) * SSBO_PARTICLE_SIZE, @FParticleCPU[0]);
-    FnBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    FSSBODirty := False;
+  FDataLock.Enter;
+  try
+    if FSSBODirty and (FParticleSSBO <> 0) and (FParticleCount > 0) and (Length(FParticleCPU) > 0) then
+    begin
+      FnBindBuffer(GL_SHADER_STORAGE_BUFFER, FParticleSSBO);
+      FnBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, NativeInt(FParticleCount) * SSBO_PARTICLE_SIZE, @FParticleCPU[0]);
+      FnBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+      FSSBODirty := False;
+    end;
+  finally
+    FDataLock.Leave;
   end;
 
   // Real DeltaTime from the monotonic ATime the base thread passes in.
@@ -1874,13 +2174,47 @@ begin
   if (DeltaTime <= 0) or (DeltaTime > 0.25) then
     DeltaTime := 1.0 / 60.0;
 
+  { Mouse sampling: one GetCursorPos per frame feeds every cursor-driven
+    feature - mouse-follow look target, idle-still detection, the saccade /
+    drift idle life below and the touch force field. GetCursorPos works
+    while the window is click-through (WS_EX_TRANSPARENT), unlike mouse
+    messages. The screen point is converted into the control's local frame
+    with pure subtraction against the UI-thread-cached origin: the FMX
+    scene tree behind ScreenToLocal must not be walked from this render
+    thread. }
+  CurValid := GetCursorPos(Cur);
+  if CurValid then
+  begin
+    Local.X := Cur.X - FScreenOrigin.X;
+    Local.Y := Cur.Y - FScreenOrigin.Y;
+  end;
+  if CurValid then
+  begin
+    if (FLastCursorPos.X = -99999) or (Abs(Cur.X - FLastCursorPos.X) > 2) or (Abs(Cur.Y - FLastCursorPos.Y) > 2) then
+      FMouseStillTimer := 0
+    else
+      FMouseStillTimer := FMouseStillTimer + DeltaTime;
+    FLastCursorPos := Cur;
+  end;
+  { Idle crossfade: with mouse-follow off, or once the cursor has rested
+    for over 1.4 s, the idle drift / saccade life fades in over half a
+    second. Any fresh movement (or re-enabling follow) fades it back out,
+    so the idle animation never fights the active tracking. }
+  if (not FMouseFollow) or (FMouseStillTimer > 1.4) then
+    IdleTarget := 1.0
+  else
+    IdleTarget := 0.0;
+  FIdleBlend := FIdleBlend + (IdleTarget - FIdleBlend) * EnsureRange(2.0 * DeltaTime, 0, 1);
+
   { Mouse-follow: smoothly steer the look direction toward the cursor,
     or ease back to centre when the option is off. }
   if FMouseFollow then
   begin
-    if GetCursorPos(Cur) then
+    if CurValid and (FControlW > 0) then
     begin
-      C := Self.LocalToScreen(PointF(Self.Width * 0.5, Self.Height * 0.5));
+      { Head centre from the cached screen rect - no LocalToScreen here,
+        the scene tree is off-limits on the render thread. }
+      C := PointF(FScreenOrigin.X + FControlW * 0.5, FScreenOrigin.Y + FControlH * 0.5);
       FLookTargetX := EnsureRange((Cur.X - C.X) / 300, -1.2, 1.2);
       FLookTargetY := EnsureRange((Cur.Y - C.Y) / 300, -0.9, 0.9);
     end;
@@ -1890,25 +2224,168 @@ begin
     FLookTargetX := 0;
     FLookTargetY := 0;
   end;
-  FLookX := FLookX + (FLookTargetX - FLookX) * EnsureRange(6.0 * DeltaTime, 0, 1);
-  FLookY := FLookY + (FLookTargetY - FLookY) * EnsureRange(6.0 * DeltaTime, 0, 1);
+
+  { Idle life: saccades - irregular eye jumps every 0.55-2.65 s. 70 % are
+    micro-saccades (barely perceptible freshening of the fixation), 30 %
+    are distinct sideways / thinking glances. The offsets persist between
+    jumps and are scaled by the idle blend below, so they ebb away while
+    the avatar actively tracks the cursor. IdleLifeMotion = False skips
+    the re-roll entirely and zeroes the offsets, so the smoothed head
+    pose glides back to the plain look target. }
+  if FIdleLifeMotion then
+  begin
+    FSaccadeTimer := FSaccadeTimer - DeltaTime;
+    if FSaccadeTimer <= 0 then
+    begin
+      FSaccadeTimer := 0.55 + Random * 2.1;
+      if Random < 0.7 then
+      begin
+        FSaccadeOffsetX := (Random * 2 - 1) * 0.16;
+        FSaccadeOffsetY := (Random * 2 - 1) * 0.12;
+      end
+      else
+      begin
+        FSaccadeOffsetX := (Random * 2 - 1) * 0.55;
+        FSaccadeOffsetY := (Random * 2 - 1) * 0.35;
+      end;
+    end;
+  end
+  else
+  begin
+    FSaccadeOffsetX := 0;
+    FSaccadeOffsetY := 0;
+  end;
+
+  { Idle head drift: a multi-sinus breathing / floating pattern (two
+    incommensurate frequencies per axis) replaces the rigid (0, 0) rest
+    pose. FIdleBlend gates it, so the drift only owns the head while the
+    cursor rests or follow is off; IdleLifeMotion = False collapses it
+    to zero so the rest pose is perfectly still. }
+  if FIdleLifeMotion then
+  begin
+    IdleHeadX := (Sin(ATime * 0.43) * 0.09 + Sin(ATime * 1.13) * 0.035) * FIdleBlend;
+    IdleHeadY := (Sin(ATime * 0.31) * 0.06 + Sin(ATime * 0.87) * 0.025) * FIdleBlend;
+  end
+  else
+  begin
+    IdleHeadX := 0;
+    IdleHeadY := 0;
+  end;
+
+  { Saccade smoothing: the rolled offsets are targets, not instant jumps -
+    FSaccadeSmooth* eases toward them at 10/s, so a new fixation glides in
+    over roughly a tenth of a second instead of snapping the head within a
+    single frame. }
+  FSaccadeSmoothX := FSaccadeSmoothX + (FSaccadeOffsetX - FSaccadeSmoothX) * EnsureRange(10.0 * DeltaTime, 0, 1);
+  FSaccadeSmoothY := FSaccadeSmoothY + (FSaccadeOffsetY - FSaccadeSmoothY) * EnsureRange(10.0 * DeltaTime, 0, 1);
+
+  { Look model: the whole head - eyes rigidly included - rotates toward the
+    look target on the 4.5/s neck-pivot filter (uLookX/uLookY), carrying the
+    idle drift and the smoothed saccade offsets. There is no separate eye
+    offset any more: the eye particles used to slide out of their sockets
+    when pushed sideways, so they now rotate with the skull and isEye is
+    purely the dim-blink flag. }
+  FLookX := FLookX + ((FLookTargetX + IdleHeadX + FSaccadeSmoothX * (0.35 + 0.65 * FIdleBlend)) - FLookX) * EnsureRange(4.5 * DeltaTime, 0, 1);
+  FLookY := FLookY + ((FLookTargetY + IdleHeadY + FSaccadeSmoothY * (0.35 + 0.65 * FIdleBlend)) - FLookY) * EnsureRange(4.5 * DeltaTime, 0, 1);
+
+  { Touch force field: while the cursor is over the control its local
+    position is scaled into buffer coordinates and the per-frame screen
+    delta feeds a smoothed velocity (buffer px / s, clamped to +-800).
+    Outside, the position marker goes to (-9999, -9999) so the shader's
+    radius test never fires and the velocity decays exponentially, so a
+    re-entering cursor starts from a calm field. MouseForceField = False
+    takes the same outside path unconditionally - no velocity tracking,
+    no per-frame state updates, the shader branch never fires. }
+  if FMouseForceField and CurValid and (Local.X >= 0) and (Local.Y >= 0) and (Local.X < FControlW) and (Local.Y < FControlH) then
+  begin
+    NewLocalX := Local.X * (FBufW / Max(FControlW, 1));
+    NewLocalY := Local.Y * (FBufH / Max(FControlH, 1));
+    if FMouseInside then
+    begin
+      FMouseVelX := FMouseVelX * 0.85 + (NewLocalX - FMouseLocalX) / Max(DeltaTime, 0.001) * 0.15;
+      FMouseVelY := FMouseVelY * 0.85 + (NewLocalY - FMouseLocalY) / Max(DeltaTime, 0.001) * 0.15;
+      FMouseVelX := EnsureRange(FMouseVelX, -800, 800);
+      FMouseVelY := EnsureRange(FMouseVelY, -800, 800);
+    end
+    else
+    begin
+      FMouseVelX := 0;
+      FMouseVelY := 0;
+    end;
+    FMouseLocalX := NewLocalX;
+    FMouseLocalY := NewLocalY;
+    FMouseInside := True;
+  end
+  else
+  begin
+    FMouseLocalX := -9999;
+    FMouseLocalY := -9999;
+    FMouseInside := False;
+    FMouseVelX := FMouseVelX * 0.85;
+    FMouseVelY := FMouseVelY * 0.85;
+  end;
+
+  { Auto-dim on hover: the cursor test runs against the cached screen rect
+    (FScreenOrigin + FControlW/H, refreshed on the UI thread), so it keeps
+    working while the window is click-through (WS_EX_TRANSPARENT never
+    delivers WM_MOUSEMOVE - but GetCursorPos always reports the true
+    position) and costs nothing on the render thread.
+    FCurrentHoverAlphaMul eases toward AUTO_DIM_ALPHA or back to 1.0 with
+    AUTO_DIM_SPEED per second; ApplyHoloUniforms multiplies it onto
+    uAlpha. }
+  if FAutoDimOnHover then
+  begin
+    Hover := False;
+    if CurValid and (FControlW > 0) then
+    begin
+      TopLeft := PointF(FScreenOrigin.X, FScreenOrigin.Y);
+      Hover := (Cur.X >= TopLeft.X) and (Cur.X <= TopLeft.X + FControlW) and
+               (Cur.Y >= TopLeft.Y) and (Cur.Y <= TopLeft.Y + FControlH);
+    end;
+    if Hover then
+      TargetMul := AUTO_DIM_ALPHA
+    else
+      TargetMul := 1.0;
+    FCurrentHoverAlphaMul := FCurrentHoverAlphaMul + (TargetMul - FCurrentHoverAlphaMul) * EnsureRange(AUTO_DIM_SPEED * DeltaTime, 0, 1);
+  end
+  else
+    FCurrentHoverAlphaMul := 1.0;
 
   FGlobalTime := ATime;
 
-  { Procedural auto-blink: FBlinkTimer counts up; once it passes
-    BlinkInterval a blink of BlinkDuration seconds runs. FBlinkPhase
-    follows a squared half sine (0 -> 1 -> 0): the square eases the fade
-    in and out at both ends of the blink instead of snapping. The phase is
-    applied as a factor onto
-    FEyeOpeness at upload time (ApplyHoloUniforms), never written back into
-    FEyeOpeness itself - the manual EyeState property stays authoritative. }
+  { Procedural auto-blink with a natural rhythm: FBlinkTimer counts up
+    through the current pause FNextBlinkDelay, then a blink of slightly
+    randomized length runs (BlinkDuration base +- 25 ms). After each blink
+    the next pause is re-rolled - 18 % of blinks chain into a double
+    blink after only 0.14-0.22 s, the rest pause 1.8-6.2 s with a
+    power distribution biased toward shorter gaps, so the rhythm never
+    reads as a metronome. FBlinkPhase follows a squared half sine
+    (0 -> 1 -> 0): the square eases the fade in and out at both ends of
+    the blink instead of snapping. The phase is applied as a factor onto
+    FEyeOpeness at upload time (ApplyHoloUniforms), never written back
+    into FEyeOpeness itself - the manual EyeState property stays
+    authoritative. }
   if FAutoBlink then
   begin
     FBlinkTimer := FBlinkTimer + DeltaTime;
-    if FBlinkTimer >= FBlinkInterval + FBlinkDuration then
+    if FBlinkTimer >= FNextBlinkDelay + FCurrentBlinkDuration then
+    begin
+      { Completed blink: roll the next pause and the next length. }
       FBlinkTimer := 0;
-    if FBlinkTimer >= FBlinkInterval then
-      FBlinkPhase := Sqr(Sin(Pi * (FBlinkTimer - FBlinkInterval) / FBlinkDuration))
+      if (Random < 0.18) and (not FDoubleBlinkPending) then
+      begin
+        FDoubleBlinkPending := True;
+        FNextBlinkDelay := 0.14 + Random * 0.08;
+      end
+      else
+      begin
+        FDoubleBlinkPending := False;
+        FNextBlinkDelay := 1.8 + Power(Random, 1.3) * 4.4;
+      end;
+      FCurrentBlinkDuration := 0.13 + Random * 0.05;
+    end;
+    if FBlinkTimer >= FNextBlinkDelay then
+      FBlinkPhase := Sqr(Sin(Pi * (FBlinkTimer - FNextBlinkDelay) / Max(FCurrentBlinkDuration, 0.02)))
     else
       FBlinkPhase := 0;
   end
@@ -1985,15 +2462,10 @@ begin
   else if FPBOHasData and Assigned(FSkiaImages[0]) then
     ACanvas.DrawImageRect(FSkiaImages[0], RectF(0, 0, FBufW, FBufH), RectF(0, 0, Width, Height), TSkSamplingOptions.Create(TSkFilterMode.Nearest, TSkMipmapMode.None));
 
-  { Alive highlighter overlay: refresh the tint from the live accent colour,
-    advance the entity with this frame's delta time (no obstacles), and
-    draw it on top of the finished avatar image. }
-  if Assigned(FHighlighter) then
-  begin
-    FHighlighter.Color := FAccentColor;
-    FHighlighter.Update(DeltaTime, nil);
-    FHighlighter.Draw(ACanvas);
-  end;
+  { The alive highlighter is no longer drawn here: TSkChaos is only a small
+    avatar-sized control, which clipped the entity to its rect. The desktop
+    overlay control on the host form calls RenderHighlighterOverlay every
+    frame instead, so the entity can travel across the whole screen. }
 end;
 //==============================================================================
 // Properties
@@ -2074,8 +2546,14 @@ var
   P: ^TParticleCPU;
   Pos: TPoint3D;
   Region: Cardinal;
-  IsHead, MakeInner, IsEyePart: Boolean;
+  IsHead, MakeInner, IsEyePart, UseCustomEye: Boolean;
 begin
+  UseCustomEye := (FCustomEyePartName <> '') and (FCustomEyePartName <> '(Auto)');
+  { The whole build writes FParticleCPU / FParticleCount; keep it atomic
+    against the render thread's SSBO upload so a startup build can never
+    interleave with a dispatch reading a half-written cloud. }
+  FDataLock.Enter;
+  try
   BudgetUsed := 0;
   FMinY := 10000;
   FMaxY := -10000;
@@ -2125,10 +2603,18 @@ begin
     end;
     IsHead := APoints[I].BodyPart = bpHead;
     { Eye meshes get PARTICLE_FLAG_EYE so the holo shader can dim them on
-      blink. Only the mesh source maps GroupTag -> MeshNames; hybrid /
-      photo points carry no usable name mapping, so they stay untagged. }
+      blink. A custom eye part (chosen in the controls panel) wins over the
+      automatic name heuristic: exactly the part whose GroupTag maps to
+      FCustomEyePartName carries the flag. Only the mesh source maps
+      GroupTag -> MeshNames; hybrid / photo points carry no usable name
+      mapping, so they stay untagged. }
     if (FSourceType = srcMesh) and (APoints[I].GroupTag < Cardinal(Length(FMeshResult.MeshNames))) then
-      IsEyePart := IsEyeMeshName(FMeshResult.MeshNames[APoints[I].GroupTag])
+    begin
+      if UseCustomEye then
+        IsEyePart := MatchesEyePartName(FMeshResult.MeshNames[APoints[I].GroupTag])
+      else
+        IsEyePart := IsEyeMeshName(FMeshResult.MeshNames[APoints[I].GroupTag]);
+    end
     else
       IsEyePart := False;
     { Expand the head bounding box while walking the points - the mouth
@@ -2181,6 +2667,10 @@ begin
     expand the bounds or the scanline range. }
   if FInnerCore and (Length(FInnerMeshResult.Points) > 0) then
   begin
+    { Remember where the custom core slice starts and how many points it
+      has: UpdateInnerCoreTargets rewrites exactly this range on scale /
+      offset changes instead of rebuilding the whole cloud. }
+    FInnerCoreStartIdx := BudgetUsed;
     InnerCap := Min(Integer(FInnerCoreBudget), PARTICLE_MAX - BudgetUsed);
     for I := 0 to High(FInnerMeshResult.Points) do
     begin
@@ -2207,8 +2697,14 @@ begin
       Inc(BudgetUsed);
       Dec(InnerCap);
     end;
-  end;
+    FInnerCoreCount := BudgetUsed - FInnerCoreStartIdx;
+  end
+  else
+    FInnerCoreCount := 0;
   FParticleCount := BudgetUsed;
+  finally
+    FDataLock.Leave;
+  end;
 end;
 
 procedure TSkChaos.FinalizeHeadBounds;
@@ -2232,6 +2728,7 @@ begin
   FState := csForming;
   FBuildScanY := FMinY;
   FDespawnScanY := FMinY;
+  EnsureVisibleForSpawn;
 end;
 
 procedure TSkChaos.SetPartColor(AIndex: Integer; AColor: TAlphaColor);
@@ -2256,15 +2753,20 @@ begin
   { Rewrite the live particles of that part directly and flag the SSBO
     dirty: the render thread uploads it on its next pass, so the new tint
     appears without reloading the mesh. }
-  for I := 0 to Integer(FParticleCount) - 1 do
-  begin
-    if I > High(FMeshResult.Points) then
-      Break;
-    if FMeshResult.Points[I].GroupTag = Cardinal(AIndex) then
+  FDataLock.Enter;
+  try
+    for I := 0 to Integer(FParticleCount) - 1 do
     begin
-      P := @FParticleCPU[I * SSBO_PARTICLE_SIZE];
-      P^.Color := Stored;
+      if I > High(FMeshResult.Points) then
+        Break;
+      if FMeshResult.Points[I].GroupTag = Cardinal(AIndex) then
+      begin
+        P := @FParticleCPU[I * SSBO_PARTICLE_SIZE];
+        P^.Color := Stored;
+      end;
     end;
+  finally
+    FDataLock.Leave;
   end;
   UploadSSBO;
   NotifyActivity;
@@ -2306,13 +2808,21 @@ begin
   FnUniform1f(FLocH_DespawnScanY, FDespawnScanY);
   FnUniform1f(FLocH_LookX, FLookX);
   FnUniform1f(FLocH_LookY, FLookY);
+  { Touch force field: cursor in buffer space (-9999 = outside, the shader's
+    38 px radius test can never match that) plus the smoothed cursor
+    velocity for the carry-along swirl. }
+  FnUniform2f(FLocH_MouseLocal, FMouseLocalX, FMouseLocalY);
+  FnUniform2f(FLocH_MouseVel, FMouseVelX, FMouseVelY);
   FnUniform1f(FLocH_PivotY, FPivotY);
   UploadTrigUniforms(FLocH_TrigY, FLocH_TrigX);
   FnUniform1i(FLocH_HoloStyle, Ord(FHoloStyle));
   FnUniform1f(FLocH_ParticleSize, FParticleSize);
   FnUniform1f(FLocH_GlowIntensity, FGlowIntensity);
   FnUniform1f(FLocH_RimLightStrength, FRimLightStrength);
-  FnUniform1f(FLocH_Alpha, FHoloAlpha);
+  { uAlpha carries the manual HoloAlpha multiplied by the hover dim factor:
+    the shader has no separate uniform for the auto-dim, so the product
+    keeps every style's fade behaviour working unchanged. }
+  FnUniform1f(FLocH_Alpha, FHoloAlpha * FCurrentHoverAlphaMul);
   FnUniform1f(FLocH_Jitter, FJitterAmount);
   ColorToVec4(FFaceColor, R, G, B, A);
   FnUniform4f(FLocH_FaceColor, R, G, B, A);
@@ -2409,14 +2919,26 @@ var
 begin
   if (FParticleCount = 0) or (Length(FMeshResult.Points) = 0) then
     Exit;
-  for I := 0 to Integer(FParticleCount) - 1 do
-  begin
-    if I > High(FMeshResult.Points) then
-      Break;
-    P := @FParticleCPU[I * SSBO_PARTICLE_SIZE];
-    P^.TX := FMeshResult.Points[I].Position.X;
-    P^.TY := FMeshResult.Points[I].Position.Y;
-    P^.TZ := FMeshResult.Points[I].Position.Z;
+  FDataLock.Enter;
+  try
+    { The outer cloud and the custom inner core share FParticleCPU: the
+      morph sequence only animates outer mesh points, so stop at the core
+      slice marker - writing further would smear outer frame data over
+      the core's placement (its targets belong to UpdateInnerCoreTargets,
+      not to the morph track). }
+    for I := 0 to Integer(FParticleCount) - 1 do
+    begin
+      if (FInnerCoreCount > 0) and (I >= FInnerCoreStartIdx) then
+        Break;
+      if I > High(FMeshResult.Points) then
+        Break;
+      P := @FParticleCPU[I * SSBO_PARTICLE_SIZE];
+      P^.TX := FMeshResult.Points[I].Position.X;
+      P^.TY := FMeshResult.Points[I].Position.Y;
+      P^.TZ := FMeshResult.Points[I].Position.Z;
+    end;
+  finally
+    FDataLock.Leave;
   end;
   UploadSSBO;
 end;
@@ -2439,16 +2961,21 @@ end;
 
 function TSkChaos.ProbeAutoAsset: string;
 var
-  ExePath, F: string;
+  ExePath: string;
   SR: TSearchRec;
 begin
+  { Default mesh at first start: angelica.glb directly next to the
+    executable or in its assets/ subfolder. If neither exists, fall back
+    to the first .glb / .obj found beside the exe so any demo mesh loads
+    regardless of filename; an empty result leaves the avatar in the
+    clean waiting state (csIdle, no crash) until the user loads a mesh
+    through the panel. }
   Result := '';
   ExePath := ExtractFilePath(ParamStr(0));
-  { Prefer the curated demo meshes, then fall back to any .glb / .obj beside
-    the exe so a demo mesh loads regardless of its filename. }
-  for F in ASSET_PROBE_LIST do
-    if FileExists(ExePath + F) then
-      Exit(ExePath + F);
+  if FileExists(ExePath + 'angelica.glb') then
+    Exit(ExePath + 'angelica.glb');
+  if FileExists(ExePath + 'assets\angelica.glb') or FileExists(ExePath + 'assets/angelica.glb') then
+    Exit(ExePath + 'assets\angelica.glb');
   if FindFirst(ExePath + '*.glb', faAnyFile, SR) = 0 then
   try
     Result := ExePath + SR.Name;
@@ -2481,6 +3008,14 @@ begin
     Opt.Step := Max(1, AStep);
     Opt.MaxParticles := AMaxParticles;
     Opt.IncludeNames := FMeshIncludeNames;
+    { A custom eye part must survive the loader's auto-exclude keywords
+      (cornea / sclera / iris / pupil ...): KeepName re-admits exactly that
+      part in automatic mode, while a manual include list already bypasses
+      the exclude keywords on its own. The same MatchesEyePartName fallback
+      (exact or substring) applies, so a near-miss selection still keeps
+      the intended eyeball part alive. }
+    if (FCustomEyePartName <> '') and (FCustomEyePartName <> '(Auto)') then
+      Opt.KeepName := FCustomEyePartName;
     { Load into a temp first so a corrupt/empty file cannot leave the avatar in
       a half-overwritten state - the old mesh stays live until the new one is
       fully parsed, then we swap atomically. }
@@ -2529,6 +3064,7 @@ begin
       FState := csForming;
       FBuildScanY := FMinY;
       FDespawnScanY := FMinY;
+      EnsureVisibleForSpawn;
     end;
   finally
      //...
@@ -2588,6 +3124,7 @@ begin
       FState := csForming;
       FBuildScanY := FMinY;
       FDespawnScanY := FMinY;
+      EnsureVisibleForSpawn;
     end;
   finally
     if WasActive then
@@ -2657,6 +3194,7 @@ begin
       FState := csForming;
       FBuildScanY := FMinY;
       FDespawnScanY := FMinY;
+      EnsureVisibleForSpawn;
     end;
   finally
     if WasActive then
@@ -2795,18 +3333,51 @@ begin
     FInnerRimPower := EnsureRange(Value, 0.50, 6.00);
 end;
 
-procedure TSkChaos.SetBlinkInterval(const Value: Single);
-begin
-  { Keep the interval inside sensible blink pacing; the timer simply
-    triggers sooner or later, no other state depends on it. }
-  FBlinkInterval := EnsureRange(Value, 0.1, 60.0);
-end;
-
 procedure TSkChaos.SetBlinkDuration(const Value: Single);
 begin
   { The blink phase divides by the duration, so keep it off zero; the
     lower bound also keeps a blink on screen for at least a few frames. }
   FBlinkDuration := EnsureRange(Value, 0.02, 2.0);
+end;
+
+procedure TSkChaos.SetNaturalBlinking(const Value: Boolean);
+begin
+  { Turning natural blinking off mid-blink must leave the eyes open, not
+    frozen at the current (possibly closed) phase; pin the phase right
+    away so the next upload reopens them. Turning it on simply lets the
+    timer continue from the current position. }
+  if FAutoBlink <> Value then
+  begin
+    FAutoBlink := Value;
+    if not Value then
+    begin
+      FBlinkPhase := 0;
+      FBlinkTimer := 0;
+    end;
+  end;
+end;
+
+procedure TSkChaos.SetHighlightFollowMouse(const Value: Boolean);
+begin
+  { Enabling follow keeps the highlighter stalking the cursor, so the
+    full-desktop overlay must render again right away: fire the wake hook
+    to un-hide its sleeping control. Disabling it does not - the entity's
+    exit animation still needs frames, and HighlighterBusy covers the
+    wind-down. }
+  if Value and (not FHighlightFollowMouse) and Assigned(FOnHighlighterWake) then
+    FOnHighlighterWake(Self);
+  FHighlightFollowMouse := Value;
+end;
+
+procedure TSkChaos.EnsureVisibleForSpawn;
+begin
+  { Called on the UI thread by every path that restarts the forming
+    animation. The csFinished branch of RenderEffect hides the control
+    (render thread, via TThread.Queue); without re-showing it here a
+    mesh swap or Spawn would run the whole forming animation while the
+    control stays invisible. }
+  if not Visible then
+    Visible := True;
 end;
 
 procedure TSkChaos.Spawn;
@@ -2818,6 +3389,9 @@ begin
   FBuildScanY := FMinY;
   FDespawnScanY := FMinY;
   NotifyActivity;
+  { Re-appear after the csFinished sleep; Spawn runs on the UI thread
+    (tray menu), so flipping Visible directly is thread-safe. }
+  EnsureVisibleForSpawn;
 end;
 
 procedure TSkChaos.Despawn;
@@ -2832,6 +3406,17 @@ end;
 
 procedure TSkChaos.QuitAfterDespawn;
 begin
+  { Persist the current head before the app goes down: position, size,
+    auto-dim, neck pivot, custom eye part and FPS tiers all live in the
+    per-mesh preset slot, so the next start continues this session without
+    a manual "Save preset for this head". Runs here on the caller (UI)
+    thread where the placement state lives, covering both exit paths -
+    the immediate quit below and the despawn-then-quit route. }
+  try
+    SaveCurrentMeshPreset;
+  except
+    { A read-only preset folder must never block quitting. }
+  end;
   FQuitAfterDespawn := True;
   { If the despawn animation already completed (csFinished) there is
     nothing left to animate, and Despawn is a no-op in that state - so
@@ -2859,14 +3444,58 @@ begin
   end;
 end;
 
+procedure TSkChaos.UpdateInnerCoreTargets;
+var
+  I, J: Integer;
+  P: ^TParticleCPU;
+begin
+  { Instant retarget of the custom inner core: rewrite the TX/TY/TZ of
+    the core slice recorded by BuildMeshTargets (same placement formula:
+    scaled around the head centre, lifted by the offset) under the data
+    lock, then flag the SSBO for the render thread's deferred upload. The
+    spring physics in the shader eases the core particles toward the new
+    targets, so the brain visibly morphs into place - no cloud rebuild,
+    no re-run of the forming scanline animation. Guards: no custom core
+    mesh points, no emitted slice, or an out-of-range marker (stale after
+    a budget change rebuild) fall back to doing nothing; the regular
+    rebuild paths still place the core correctly in those cases. }
+  if (Length(FInnerMeshResult.Points) = 0) or (not FInnerCore) or
+     (FInnerCoreCount <= 0) or (FInnerCoreStartIdx < 0) then
+    Exit;
+  if FInnerCoreStartIdx + FInnerCoreCount > Length(FParticleCPU) then
+    Exit;
+  FDataLock.Enter;
+  try
+    if FInnerCoreCount > Length(FInnerMeshResult.Points) then
+      Exit;
+    for I := 0 to FInnerCoreCount - 1 do
+    begin
+      J := FInnerCoreStartIdx + I;
+      P := @FParticleCPU[J * SSBO_PARTICLE_SIZE];
+      P^.TX := FInnerMeshResult.Points[I].Position.X * FInnerCoreScale + FHeadCenter.X;
+      P^.TY := FInnerMeshResult.Points[I].Position.Y * FInnerCoreScale + FHeadCenter.Y + FInnerCoreOffsetY;
+      P^.TZ := FInnerMeshResult.Points[I].Position.Z * FInnerCoreScale + FHeadCenter.Z;
+    end;
+  finally
+    FDataLock.Leave;
+  end;
+  UploadSSBO;
+end;
+
 procedure TSkChaos.SetInnerCoreScale(const Value: Single);
 begin
   if FInnerCoreScale <> Value then
   begin
     FInnerCoreScale := EnsureRange(Value, 0.10, 1.20);
-    { The core placement is baked into the emitted points, so a new scale
-      needs a rebuild to land. }
-    RebuildTargetCloud;
+    { Instant path: with a custom core mesh loaded the core slice is
+      rewritten in place (the placement formula only depends on scale,
+      offset and the head centre), so dragging the slider morphs the
+      brain live. Only the procedural-core / no-mesh cases still need
+      the full rebuild, and those have no core slice to retarget anyway. }
+    if (Length(FInnerMeshResult.Points) > 0) and FInnerCore and (FInnerCoreCount > 0) then
+      UpdateInnerCoreTargets
+    else
+      RebuildTargetCloud;
     NotifyActivity;
   end;
 end;
@@ -2876,7 +3505,13 @@ begin
   if FInnerCoreOffsetY <> Value then
   begin
     FInnerCoreOffsetY := EnsureRange(Value, -80.0, 80.0);
-    RebuildTargetCloud;
+    { Same instant path as SetInnerCoreScale: rewrite the core slice's
+      targets instead of rebuilding the cloud and restarting the forming
+      animation. }
+    if (Length(FInnerMeshResult.Points) > 0) and FInnerCore and (FInnerCoreCount > 0) then
+      UpdateInnerCoreTargets
+    else
+      RebuildTargetCloud;
     NotifyActivity;
   end;
 end;
@@ -2943,7 +3578,7 @@ end;
 
 procedure TSkChaos.SetInnerPartColor(AIndex: Integer; AColor: TAlphaColor);
 var
-  I, J, OuterCount: Integer;
+  I, J: Integer;
   Stored: Cardinal;
   P: ^TParticleCPU;
 begin
@@ -2959,20 +3594,24 @@ begin
   else
     Stored := (Cardinal(AColor) and $00FFFFFF) or $FE000000;
   { The custom core particles follow the outer cloud in the buffer, emitted
-    in FInnerMeshResult.Points order, so their indices run from the outer
-    count up to FParticleCount. Rewrite them in place and flag the SSBO
-    dirty so the render thread uploads the new tints without a rebuild. }
-  OuterCount := Min(Length(FMeshResult.Points), Integer(FParticleBudget));
-  for I := OuterCount to Integer(FParticleCount) - 1 do
-  begin
-    J := I - OuterCount;
-    if J > High(FInnerMeshResult.Points) then
-      Break;
-    if FInnerMeshResult.Points[J].GroupTag = Cardinal(AIndex) then
-    begin
-      P := @FParticleCPU[I * SSBO_PARTICLE_SIZE];
-      P^.Color := Stored;
-    end;
+    in FInnerMeshResult.Points order: BuildMeshTargets records the exact
+    slice (FInnerCoreStartIdx / FInnerCoreCount), so rewrite exactly that
+    range via the markers - the old OuterCount estimate drifted whenever
+    the outer budget clipped below the stored point count. }
+  FDataLock.Enter;
+  try
+    if FInnerCoreCount > 0 then
+      for I := FInnerCoreStartIdx to FInnerCoreStartIdx + FInnerCoreCount - 1 do
+      begin
+        J := I - FInnerCoreStartIdx;
+        if FInnerMeshResult.Points[J].GroupTag = Cardinal(AIndex) then
+        begin
+          P := @FParticleCPU[I * SSBO_PARTICLE_SIZE];
+          P^.Color := Stored;
+        end;
+      end;
+  finally
+    FDataLock.Leave;
   end;
   UploadSSBO;
   NotifyActivity;
@@ -2988,16 +3627,24 @@ end;
 procedure TSkChaos.HighlightPoint(AX, AY: Single);
 begin
   { Forward the screen point to the alive entity; RenderEffect updates and
-    draws it on the render thread. }
+    draws it on the render thread. The wake hook lets the full-desktop
+    overlay host un-hide itself at once - its render loop sleeps at 120 ms
+    while idle and would otherwise only notice the busy flag on its next
+    wake-up. }
   if Assigned(FHighlighter) then
     FHighlighter.SendToPoint(PointF(AX, AY));
+  if Assigned(FOnHighlighterWake) then
+    FOnHighlighterWake(Self);
 end;
 
 procedure TSkChaos.HighlightRect(const ARect: TRectF);
 begin
-  { The entity flies to the rectangle and orbits its centre. }
+  { The entity flies to the rectangle and orbits its centre; the wake hook
+    promotes the overlay host out of its idle sleep immediately. }
   if Assigned(FHighlighter) then
     FHighlighter.SendToRect(ARect);
+  if Assigned(FOnHighlighterWake) then
+    FOnHighlighterWake(Self);
 end;
 
 procedure TSkChaos.DismissHighlight;
@@ -3006,6 +3653,69 @@ begin
     without a hard cut. }
   if Assigned(FHighlighter) then
     FHighlighter.ExitToVoid;
+end;
+
+function TSkChaos.HighlighterBusy: Boolean;
+begin
+  { Busy = anything left to animate: alive, approaching / orbiting, or
+    still walking out (ssExiting keeps FActive True until ResetToIdle).
+    An idle entity plus inactive mouse-follow lets the overlay skip its
+    per-frame work completely. }
+  Result := Assigned(FHighlighter) and
+    (FHighlighter.Active or FHighlightFollowMouse);
+end;
+
+procedure TSkChaos.SetHighlighterBounds(AWidth, AHeight: Single);
+begin
+  { The entity's wall / boundary model mirrors the caller's canvas - the
+    full-desktop overlay - so walls repel at the screen edges and the exit
+    animation aims off-screen, not off the small avatar rect. }
+  if Assigned(FHighlighter) then
+    FHighlighter.SetBounds(AWidth, AHeight);
+end;
+
+procedure TSkChaos.RenderHighlighterOverlay(const ACanvas: ISkCanvas; ADeltaTime: Single; AMouseX, AMouseY: Single; AHasMouse: Boolean);
+var
+  DirtyRect: TRect;
+begin
+  if not Assigned(FHighlighter) then
+    Exit;
+  { Tint from the live accent colour, then mouse-follow: the caller passes
+    the cursor already converted into its own (overlay) frame; FollowPoint
+    moves only the goal, so a per-frame retarget keeps the tail flowing
+    instead of re-spawning. }
+  FHighlighter.Color := FAccentColor;
+  if FHighlightFollowMouse and AHasMouse then
+  begin
+    FHighlighter.UpdateMousePos(AMouseX, AMouseY);
+    FHighlighter.FollowPoint(PointF(AMouseX, AMouseY));
+  end;
+  FHighlighter.Update(ADeltaTime, nil);
+  { Clip the entity's draw to its dirty rect (current + previous frame
+    footprint): Skia then rasterizes only that ~250x250 region of the
+    fullscreen canvas instead of every pixel of the monitor, and the
+    Save/Restore pair keeps the clip from leaking into the next frame. }
+  DirtyRect := FHighlighter.GetDirtyRect;
+  if not DirtyRect.IsEmpty then
+  begin
+    ACanvas.Save;
+    ACanvas.ClipRect(TRectF.Create(DirtyRect));
+    FHighlighter.Draw(ACanvas);
+    ACanvas.Restore;
+  end
+  else
+    FHighlighter.Draw(ACanvas);
+end;
+
+function TSkChaos.HighlighterDirtyRect: TRect;
+begin
+  { Straight pass-through: the rect is already in the host's buffer
+    coordinates (SetHighlighterBounds mirrors the overlay canvas) and
+    already clamped to the screen bounds. }
+  if Assigned(FHighlighter) then
+    Result := FHighlighter.GetDirtyRect
+  else
+    Result := TRect.Create(0, 0, 0, 0);
 end;
 
 procedure TSkChaos.SetParticleBudget(const Value: Cardinal);
@@ -3029,6 +3739,7 @@ begin
       FState := csForming;
       FBuildScanY := FMinY;
       FDespawnScanY := FMinY;
+      EnsureVisibleForSpawn;
     end;
     NotifyActivity;
   end;
@@ -3134,6 +3845,33 @@ begin
   FDragMode := Value;
 end;
 
+procedure TSkChaos.RefreshScreenGeometry;
+var
+  Origin: TPointF;
+begin
+  { UI thread only. LocalToScreen walks the FMX window hierarchy, which
+    is safe here (Draw / ParentChanged / drag paths all run on the UI
+  thread) but must never happen on the render thread. Falls back to the
+  previous cache while the control has no root yet, so early frames
+  render with stale-but-safe values instead of crashing. }
+  if (Parent = nil) or (Root = nil) then
+    Exit;
+  Origin := LocalToScreen(PointF(0, 0));
+  FScreenOrigin := Point(Trunc(Origin.X), Trunc(Origin.Y));
+  FControlW := Width;
+  FControlH := Height;
+end;
+
+procedure TSkChaos.Draw(const ACanvas: ISkCanvas; const ADest: TRectF; const AOpacity: Single);
+begin
+  { Draw runs on the UI thread with the FMX scene lock held: the perfect
+    anchor to refresh the cached screen geometry once per presented frame
+    so the render thread's pure-arithmetic cursor conversion stays exact
+    through drags, form moves and avatar resizes. }
+  RefreshScreenGeometry;
+  inherited Draw(ACanvas, ADest, AOpacity);
+end;
+
 procedure TSkChaos.ParentChanged;
 var
   X, Y: Single;
@@ -3152,6 +3890,10 @@ begin
     Position.Y := Y;
     FHasPendingStartupPlacement := False;
   end;
+  { New parent / host form: the cached screen origin belongs to the old
+    window; re-measure immediately so the first rendered frame after the
+    re-parent already converts cursor samples against the real position. }
+  RefreshScreenGeometry;
 end;
 
 procedure TSkChaos.ClampIntoParent(var X, Y: Single);
@@ -3195,6 +3937,10 @@ begin
     ClampIntoParent(NewX, NewY);
     Position.X := NewX;
     Position.Y := NewY;
+    { The control just moved: refresh the cached screen origin now, not
+      at the next Draw, so the render thread's cursor conversion matches
+      the new placement within the same frame. }
+    RefreshScreenGeometry;
   end;
 end;
 
@@ -3203,32 +3949,6 @@ begin
   inherited MouseUp(Button, Shift, X, Y);
   if FDragMode and (Button = TMouseButton.mbLeft) then
     FDragging := False;
-end;
-
-procedure TSkChaos.SnapBottomRight(AMarginX, AMarginY: Single);
-var
-  P: TControl;
-begin
-  if Parent is TControl then
-  begin
-    P := TControl(Parent);
-    { Bottom-right dock with room for the taskbar / tray area by
-      default. }
-    Position.X := Max(P.Width - Width - AMarginX, 0);
-    Position.Y := Max(P.Height - Height - AMarginY, 0);
-  end;
-end;
-
-procedure TSkChaos.SnapBottomLeft(AMarginX, AMarginY: Single);
-var
-  P: TControl;
-begin
-  if Parent is TControl then
-  begin
-    P := TControl(Parent);
-    Position.X := Min(AMarginX, Max(P.Width - Width, 0));
-    Position.Y := Max(P.Height - Height - AMarginY, 0);
-  end;
 end;
 
 procedure TSkChaos.SetAvatarSize(AWidth: Single);
@@ -3254,6 +3974,10 @@ begin
   ClampIntoParent(NewX, NewY);
   Position.X := NewX;
   Position.Y := NewY;
+  { The control's screen rect changed with the resize: re-cache it right
+    away so the render thread scales cursor samples against the new
+    width instead of the stale one for a frame. }
+  RefreshScreenGeometry;
   { Mesh sources re-fit the clouds to the new world size. A same-file
     reload keeps the per-part tints; morph weights and the playing vertex
     sequence are restored around it, and a custom core mesh re-loads with
@@ -3296,6 +4020,21 @@ begin
   if Parent <> '' then
     Base := Parent + '_' + Base;
   Result := TPath.Combine(GetPresetsFolder, Base + '.ini');
+end;
+
+function TSkChaos.MatchesEyePartName(const APartName: string): Boolean;
+var
+  Custom: string;
+begin
+  Custom := Trim(FCustomEyePartName);
+  if (Custom = '') or (Custom = '(Auto)') or (APartName = '') then
+    Exit(False);
+  { Exact match first, then substring in either direction: the combo lists
+    the loader's own mesh names, but a preset saved for a differently
+    renamed export (Eyes vs. LeftEye_Mesh.001) should still resolve. }
+  Result := SameText(APartName, Custom) or
+            APartName.ToLower.Contains(Custom.ToLower) or
+            Custom.ToLower.Contains(APartName.ToLower);
 end;
 
 function TSkChaos.GetLastPresetIndexPath: string;
@@ -3440,6 +4179,7 @@ begin
     Ini.WriteFloat('Mesh', 'InnerCoreOffsetY', FInnerCoreOffsetY);
     Ini.WriteInteger('Mesh', 'InnerCoreBudget', Integer(FInnerCoreBudget));
     Ini.WriteInteger('Mesh', 'ParticleBudget', Integer(FParticleBudget));
+    Ini.WriteString('Mesh', 'CustomEyePartName', FCustomEyePartName);
 
     Ini.WriteInteger('Style', 'HoloStyle', Ord(FHoloStyle));
     WriteColor('Style', 'FaceColor', FFaceColor);
@@ -3453,13 +4193,24 @@ begin
     Ini.WriteFloat('Style', 'InnerSoftness', FInnerSoftness);
     Ini.WriteFloat('Style', 'InnerRimPower', FInnerRimPower);
 
-    Ini.WriteFloat('Animation', 'BlinkInterval', FBlinkInterval);
     Ini.WriteFloat('Animation', 'BlinkDuration', FBlinkDuration);
+    Ini.WriteFloat('Animation', 'NeckPivotRatio', FNeckPivotRatio);
+
+    { Behavior toggles under [Face], matching the panel's BEHAVIOR group. }
+    Ini.WriteBool('Face', 'MouseForceField', FMouseForceField);
+    Ini.WriteBool('Face', 'IdleLifeMotion', FIdleLifeMotion);
+    Ini.WriteBool('Face', 'NaturalBlinking', FAutoBlink);
 
     Ini.WriteFloat('Overlay', 'PosX', Position.X);
     Ini.WriteFloat('Overlay', 'PosY', Position.Y);
     Ini.WriteFloat('Overlay', 'AvatarWidth', Width);
     Ini.WriteBool('Overlay', 'DragMode', FDragMode);
+    Ini.WriteBool('Overlay', 'AutoDimOnHover', FAutoDimOnHover);
+
+    Ini.WriteBool('Performance', 'AdaptiveFPS', AdaptiveFPS);
+    Ini.WriteInteger('Performance', 'ActiveTargetFPS', ActiveTargetFPS);
+    Ini.WriteInteger('Performance', 'IdleTargetFPS', IdleTargetFPS);
+    Ini.WriteFloat('Performance', 'IdleTimeoutSec', IdleTimeoutSec);
 
     { One scan over the live point set: a part is visible iff the loader
       kept at least one of its points, which holds for both the automatic
@@ -3508,9 +4259,12 @@ begin
 
       { Budgets drive what the loaders parse, so they go in as plain
         fields first; their setters would reload the old source with the
-        old budget before this preset's mesh is even loaded. }
+        old budget before this preset's mesh is even loaded. The custom
+        eye part also lands before any mesh (re)load: its KeepName must
+        already be in place so the loader keeps the eyeball part alive. }
       FInnerCoreBudget := Cardinal(Ini.ReadInteger('Mesh', 'InnerCoreBudget', Integer(FInnerCoreBudget)));
       FParticleBudget := Cardinal(Ini.ReadInteger('Mesh', 'ParticleBudget', Integer(FParticleBudget)));
+      FCustomEyePartName := Ini.ReadString('Mesh', 'CustomEyePartName', FCustomEyePartName);
 
       { Per-part visibility feeds the include list the mesh loader
         consumes, so apply the hidden flags before any (re)parse. }
@@ -3557,9 +4311,18 @@ begin
       InnerSoftness := Ini.ReadFloat('Style', 'InnerSoftness', FInnerSoftness);
       InnerRimPower := Ini.ReadFloat('Style', 'InnerRimPower', FInnerRimPower);
 
-      { Animation pacing. }
-      BlinkInterval := Ini.ReadFloat('Animation', 'BlinkInterval', FBlinkInterval);
+      { Animation pacing. NeckPivotRatio routes through its property so
+        FPivotY is recomputed from the loaded mesh's Y range immediately.
+        Old presets carrying the removed BlinkInterval key are silently
+        ignored - the natural re-roll owns the pause rhythm. }
       BlinkDuration := Ini.ReadFloat('Animation', 'BlinkDuration', FBlinkDuration);
+      NeckPivotRatio := Ini.ReadFloat('Animation', 'NeckPivotRatio', FNeckPivotRatio);
+
+      { Behavior toggles ([Face] section); the checkbox panel and the
+        tray menu pick these up via SyncControlsFromChaos after load. }
+      MouseForceField := Ini.ReadBool('Face', 'MouseForceField', FMouseForceField);
+      IdleLifeMotion := Ini.ReadBool('Face', 'IdleLifeMotion', FIdleLifeMotion);
+      NaturalBlinking := Ini.ReadBool('Face', 'NaturalBlinking', FAutoBlink);
 
       { Per-part tints. Both setters guard the index range, so a preset
         written for a different mesh applies only the overlapping parts. }
@@ -3583,6 +4346,16 @@ begin
         window-style call until a host form exists, which keeps it safe
         during startup restore. }
       DragMode := Ini.ReadBool('Overlay', 'DragMode', FDragMode);
+      AutoDimOnHover := Ini.ReadBool('Overlay', 'AutoDimOnHover', FAutoDimOnHover);
+
+      { Performance tiers: adaptive pacing and the active / idle FPS pair
+        with the idle timeout, so a tuned preset reproduces its frame
+        pacing exactly on the next start. }
+      AdaptiveFPS := Ini.ReadBool('Performance', 'AdaptiveFPS', AdaptiveFPS);
+      ActiveTargetFPS := Ini.ReadInteger('Performance', 'ActiveTargetFPS', ActiveTargetFPS);
+      IdleTargetFPS := Ini.ReadInteger('Performance', 'IdleTargetFPS', IdleTargetFPS);
+      IdleTimeoutSec := Ini.ReadFloat('Performance', 'IdleTimeoutSec', IdleTimeoutSec);
+
       if Parent is TControl then
         ClampIntoParent(X, Y)
       else
