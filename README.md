@@ -49,8 +49,9 @@ v0.4:  https://youtu.be/sGEjN7L1UJA
 ---      
        
 <img width="1280" height="591" alt="photo_2026-11-27_07-55-24" src="https://github.com/user-attachments/assets/7a7ae0f6-6d02-438d-8f1e-018ab4a6bb7c" />
-    
      
+C.H.A.O.S. on my asus zenscreen oled... send to monitor coming in next update ;)    
+       
 ## 🚧 Work in Progress / Roadmap    
      
 - **AI API & Lip-Sync Integration:** Connecting an OpenAI-compatible REST bridge (`/v1/chat/completions` supporting local Ollama / `llama.cpp` as well as free cloud APIs) paired with real-time audio-driven jaw/lip-sync (`MouthOpen`) and optional offline speech recognition (**Vosk**) + neural TTS (**Piper** / `MiniAudio4Delphi`).
