@@ -92,14 +92,15 @@ Depends on loaded meshs, max particles, size, fps, etc settings sure too a lot.
 
 🖥️ Finally, a real purpose for those tiny secondary screens built into laptops (ThinkBook Plus Gen3, ZenBook ScreenPad & co.)        
                
-### Built From / Evolution    
-*C.H.A.O.S.* is the direct result and convergence of my previous Delphi / Skia / GPU experiments:      
-- **DesktopPetBase** (transparent click-through desktop overlay & window layering)    
-- **Skia FlowMotion** (spring physics & the autonomous *AliveHighlighter* companion)    
-- **Yutani.NanoFog** & **Yutani Particle Engine** (high-count particle simulation & morphing)     
-- **GPU Particle Engine** (native Raylib / OpenGL compute & instanced rendering pipeline)     
-- **Skia GPU Liquid** & **Skia Holo Intro** (custom GLSL shaders, glow, falloff & hologram aesthetics)     
-         
+### Built From / Evolution     
+*C.H.A.O.S.* is the direct result and convergence of my previous Delphi / Skia / GPU experiments:    
+     
+- **[DesktopPetBase](https://github.com/LaMitaOne/SkiaDesktopPetBase)** (transparent click-through desktop overlay & window layering)    
+- **[Skia FlowMotion](https://github.com/LaMitaOne/skia-flowmotion)** (spring physics & the autonomous *AliveHighlighter* companion)    
+- **[Yutani.NanoFog](https://github.com/LaMitaOne/Yutani-Building-better-worlds)** & **[Yutani Particle Engine](https://github.com/LaMitaOne/Yutani-Particle-Engine)** (high-count particle simulation & morphing)    
+- **[GPU Particle Engine](https://github.com/LaMitaOne/Yutani-GPU-Particles)** (native Raylib / OpenGL compute & instanced rendering pipeline)    
+- **[Skia GPU Liquid](https://github.com/LaMitaOne/Skia-GPU-Liquid)** & **[Skia Holo Intro](https://github.com/LaMitaOne/Yutani-Skia-Holographic-Splash)** (custom GLSL shaders, glow, falloff & hologram aesthetics)    
+          
     
 ---    
          
