@@ -66,7 +66,7 @@ begin
     is a live option on the tray menu and the controls panel. }
   FChaos.MouseFollow := True;
   FChaos.StayOnTop := True;
-  FChaos.ClickThrough := True;
+ // FChaos.ClickThrough := True;
   { FMX finalizes the window handle when the form is shown (Transparency /
     FormStyle recreate the HWND), which drops the raw WS_EX_TRANSPARENT flag
     applied above. Re-apply it from OnShow so click-through is live from the

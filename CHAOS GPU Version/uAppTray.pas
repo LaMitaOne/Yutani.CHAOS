@@ -60,6 +60,7 @@ const
   IDM_MOUSEFOLLOW = 1014;
   IDM_STAYONTOP = 1015;
   IDM_CLICKTHROUGH = 1016;
+  IDM_DRAGMODE = 1017;
   { Dynamic "Send to Screen" entries: IDM_MONITOR_BASE + display index.
     2000 leaves ample room above the fixed 10xx commands. }
   IDM_MONITOR_BASE = 2000;
@@ -197,6 +198,7 @@ begin
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.MouseFollow), IDM_MOUSEFOLLOW, PChar('Mouse follow'));
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.StayOnTop), IDM_STAYONTOP, PChar('Stay on top'));
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.ClickThrough), IDM_CLICKTHROUGH, PChar('Click-through'));
+  AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.DragMode), IDM_DRAGMODE, PChar('Draggable'));
   { Send to Screen submenu: built live on every right-click, so a beamer
     plugged in since the last click appears immediately. MF_CHECKED marks
     the monitor the overlay window currently sits on. hMon is only
@@ -285,6 +287,9 @@ begin
     IDM_CLICKTHROUGH:
       if Assigned(GChaos) then
         GChaos.ClickThrough := not GChaos.ClickThrough;
+    IDM_DRAGMODE:
+      if Assigned(GChaos) then
+        GChaos.DragMode := not GChaos.DragMode;
     { Exit plays the despawn animation first, then quits once it completes
       (see TSkChaos.QuitAfterDespawn / the csFading state machine). }
     IDM_EXIT:

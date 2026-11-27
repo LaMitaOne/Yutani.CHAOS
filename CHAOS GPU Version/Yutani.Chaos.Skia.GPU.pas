@@ -4711,6 +4711,7 @@ begin
         window-style call until a host form exists, which keeps it safe
         during startup restore. }
       DragMode := Ini.ReadBool('Overlay', 'DragMode', FDragMode);
+
       AutoDimOnHover := Ini.ReadBool('Overlay', 'AutoDimOnHover', FAutoDimOnHover);
 
       { Performance tiers: adaptive pacing and the active / idle FPS pair
