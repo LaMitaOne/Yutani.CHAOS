@@ -1,9 +1,9 @@
-Yutani mesh names: cybernetic_skull_helmet.glb
+Yutani mesh names: angelica.glb
 idx  name                            morph-targets
-  0  Object_0                        targets=0
-  1  Object_1                        targets=0
-  2  Object_2                        targets=0
-  3  Object_3                        targets=0
-  4  Object_4                        targets=0
-  5  Object_5                        targets=0
-  6  Object_6                        targets=0
+  0  Mouth_Mouth_0                   targets=0
+  1  Hair_Hair_0                     targets=0
+  2  Head_Head_0                     targets=0
+  3  Eye_Eye_0                       targets=0
+  4  EyeScleraReflect_EyeScleraReflect_0  targets=0
+  5  Eyelashes_Eyelashes_0           targets=0
+  6  MeniscusEyeSpec_MeniscusEye_0   targets=0
