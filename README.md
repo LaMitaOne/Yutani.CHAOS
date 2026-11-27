@@ -46,7 +46,10 @@ v0.4:  https://youtu.be/sGEjN7L1UJA
 - **True `0%` CPU / GPU Despawn & Adaptive FPS:** Includes holographic top-to-bottom build-up (`Spawn`), gravity-driven tear-down (`Despawn` parking the overlay at `0.0–0.8%` CPU and `0%` GPU while keeping the OpenGL context warm), and automatic `ActiveTargetFPS` / `IdleTargetFPS` throttling.    
 - **Tabbed Runtime Control Panel & Native System Tray:** Features a compact, HD-screen-friendly tabbed cockpit (`uControls`) with individual toggles for every behavioral feature (`MouseForceField`, `IdleLifeMotion`, `NaturalBlinking`, `AutoDimOnHover`, `AdaptiveFPS`) for live profiling and low-end hardware tuning, plus a dependency-free Win32 `Shell_NotifyIconW` system tray menu (`uAppTray`).   
     
----   
+---      
+       
+<img width="1280" height="591" alt="photo_2026-11-27_07-55-24" src="https://github.com/user-attachments/assets/7a7ae0f6-6d02-438d-8f1e-018ab4a6bb7c" />
+    
      
 ## 🚧 Work in Progress / Roadmap    
      
