@@ -60,7 +60,9 @@ const
   IDM_MOUSEFOLLOW = 1014;
   IDM_STAYONTOP = 1015;
   IDM_CLICKTHROUGH = 1016;
-  IDM_AUTODIM = 1017;
+  { Dynamic "Send to Screen" entries: IDM_MONITOR_BASE + display index.
+    2000 leaves ample room above the fixed 10xx commands. }
+  IDM_MONITOR_BASE = 2000;
 
 function TrayWndProc(hWnd: hWnd; Msg: UINT; wParam: wParam; lParam: lParam): LRESULT; stdcall;
 var
@@ -175,8 +177,9 @@ end;
 
 procedure TAppTray.ShowMenu(X, Y: Integer);
 var
-  hXMenu, hSub: HMENU;
-  Cmd: Integer;
+  hXMenu, hSub, hMon: HMENU;
+  Cmd, I, Cnt, CurMon: Integer;
+  Info: TChaosDisplayInfo;
 begin
   hXMenu := CreatePopupMenu;
   hSub := CreatePopupMenu;
@@ -194,7 +197,31 @@ begin
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.MouseFollow), IDM_MOUSEFOLLOW, PChar('Mouse follow'));
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.StayOnTop), IDM_STAYONTOP, PChar('Stay on top'));
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.ClickThrough), IDM_CLICKTHROUGH, PChar('Click-through'));
-  AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.AutoDimOnHover), IDM_AUTODIM, PChar('Auto-dim on hover'));
+  { Send to Screen submenu: built live on every right-click, so a beamer
+    plugged in since the last click appears immediately. MF_CHECKED marks
+    the monitor the overlay window currently sits on. hMon is only
+    created when a display exists - a never-attached popup handle would
+    not be freed by the closing DestroyMenu(hXMenu). }
+  if Assigned(GChaos) then
+    Cnt := GChaos.DisplayCount
+  else
+    Cnt := 0;
+  if Cnt > 0 then
+  begin
+    hMon := CreatePopupMenu;
+    CurMon := GChaos.CurrentDisplayIndex;
+    for I := 0 to Cnt - 1 do
+    begin
+      Info := GChaos.DisplayInfo(I);
+      if Info.Primary then
+        AppendMenuW(hMon, MF_STRING or MenuCheck(I = CurMon), IDM_MONITOR_BASE + I,
+          PChar(Format('Monitor %d (%dx%d - Primary)', [I + 1, Info.Bounds.Width, Info.Bounds.Height])))
+      else
+        AppendMenuW(hMon, MF_STRING or MenuCheck(I = CurMon), IDM_MONITOR_BASE + I,
+          PChar(Format('Monitor %d (%dx%d)', [I + 1, Info.Bounds.Width, Info.Bounds.Height])));
+    end;
+    AppendMenuW(hXMenu, MF_POPUP or MF_STRING, hMon, PChar('Send to Screen'));
+  end;
   AppendMenuW(hXMenu, MF_SEPARATOR, 0, nil);
   AppendMenuW(hXMenu, MF_STRING, IDM_EXIT, PChar('Exit'));
   { SetForegroundWindow + a trailing WM_NULL is the documented workaround so
@@ -211,6 +238,16 @@ procedure TAppTray.DoCommand(Cmd: Integer);
 begin
   if not Assigned(GChaos) then
     GChaos := FindChaos;
+  { Dynamic monitor commands sit above the fixed command range: dispatch
+    them before the case so the index simply is Cmd - IDM_MONITOR_BASE.
+    SendToDisplay moves + exactly fits the overlay window onto that
+    monitor (DPI-safe) and re-anchors the avatar. }
+  if Cmd >= IDM_MONITOR_BASE then
+  begin
+    if Assigned(GChaos) then
+      GChaos.SendToDisplay(Cmd - IDM_MONITOR_BASE);
+    Exit;
+  end;
   case Cmd of
     IDM_MODE_HOLOGRAM:
       if Assigned(GChaos) then
@@ -248,9 +285,6 @@ begin
     IDM_CLICKTHROUGH:
       if Assigned(GChaos) then
         GChaos.ClickThrough := not GChaos.ClickThrough;
-    IDM_AUTODIM:
-      if Assigned(GChaos) then
-        GChaos.AutoDimOnHover := not GChaos.AutoDimOnHover;
     { Exit plays the despawn animation first, then quits once it completes
       (see TSkChaos.QuitAfterDespawn / the csFading state machine). }
     IDM_EXIT:

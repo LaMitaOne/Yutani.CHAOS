@@ -10,7 +10,11 @@ uses
   uAppTray in 'uAppTray.pas',
   Yutani.MeshLoader in 'Yutani.MeshLoader.pas',
   uSkiaCustomThreadedBase in 'uSkiaCustomThreadedBase.pas',
-  Yutani.PhotoTo3D in 'Yutani.PhotoTo3D.pas';
+  Yutani.PhotoTo3D in 'Yutani.PhotoTo3D.pas',
+  Yutani.Audio.Demo in 'Yutani.Audio.Demo.pas',
+  Yutani.Audio.PiperTTS in 'Yutani.Audio.PiperTTS.pas',
+  Yutani.Audio.Vosk in 'Yutani.Audio.Vosk.pas',
+  Yutani.AI.Client in 'Yutani.AI.Client.pas';
 
 {$R *.res}
 

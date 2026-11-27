@@ -142,6 +142,10 @@
         <DCCReference Include="Yutani.MeshLoader.pas"/>
         <DCCReference Include="uSkiaCustomThreadedBase.pas"/>
         <DCCReference Include="Yutani.PhotoTo3D.pas"/>
+        <DCCReference Include="Yutani.Audio.Demo.pas"/>
+        <DCCReference Include="Yutani.Audio.PiperTTS.pas"/>
+        <DCCReference Include="Yutani.Audio.Vosk.pas"/>
+        <DCCReference Include="Yutani.AI.Client.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

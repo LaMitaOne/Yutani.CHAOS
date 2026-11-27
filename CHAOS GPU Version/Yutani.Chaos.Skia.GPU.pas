@@ -90,6 +90,12 @@ const
   GL_MAP_COHERENT_BIT = $0080;
   GL_DYNAMIC_COPY = $88EA;
 
+  { Monitor enumeration (value not exposed by Winapi.Windows): the
+    primary flag of MONITORINFOEX.dwFlags. The SetWindowPos flags
+    (SWP_NOSIZE / SWP_NOZORDER / SWP_NOACTIVATE) come from
+    Winapi.Windows, which the unit already uses. }
+  MONITORINFOF_PRIMARY = $00000001;
+
   { Visual style identifiers sent to the holo shader as uHoloStyle; the
     values must stay in sync with Ord(THoloStyle). }
   HOLO_STYLE_HOLOGRAM = 0;
@@ -128,6 +134,14 @@ type
     styles map 1:1 onto the uHoloStyle values the shader branches on. }
   THoloStyle = (hsHologram, hsAndroidCircuit, hsCyberMatrix, hsBlueprint, hsSolid);
 
+  { Selectable touch effect style. The Ord values map 1:1 onto the
+    uTouchEffectStyle values the holo shader branches on:
+    0 = Forcefield (soft radial push, the original behaviour),
+    1 = Glow (no displacement, brightness lift inside the touch radius),
+    2 = ColorFade (no displacement, colour blend into TouchEffectColor),
+    3 = Ripple (soft concentric sine wave, Z displacement + shimmer). }
+  TChaosTouchEffectStyle = (tesForcefield, tesGlow, tesColorFade, tesRipple);
+
   { Active particle source. The depth-map face is the legacy path; mesh,
     photo and hybrid route through the holo shader. }
   TChaosSource = (srcDepthMap, srcMesh, srcPhoto, srcHybrid);
@@ -145,6 +159,27 @@ type
   PFNGLCREATESHADERPROC = function(shaderType: Cardinal): Cardinal; stdcall;
 
   PFNGLDELETESHADERPROC = procedure(shader: Cardinal); stdcall;
+
+  { Physical (device / pixel) bounds of one attached monitor plus its
+    primary flag - what SendToDisplay snaps the host window onto. }
+  TChaosDisplayInfo = record
+    Bounds: TRect;
+    Primary: Boolean;
+  end;
+
+  { MONITORINFOEXW for the EnumDisplayMonitors callback; TChaosDisplayInfo
+    is the trimmed public view the panel consumes. }
+  TMonitorInfoEx = record
+    cbSize: Cardinal;
+    rcMonitor: TRect;
+    rcWork: TRect;
+    dwFlags: Cardinal;
+    szDevice: array[0..31] of WideChar;
+  end;
+  PMonitorInfoEx = ^TMonitorInfoEx;
+
+  TMonitorEnumProc = function(hMonitor: THandle; hdcMonitor: HDC;
+    lprcMonitor: PRect; dwData: NativeInt): LongBool; stdcall;
 
   PFNGLSHADERSOURCEPROC = procedure(shader: Cardinal; count: Integer; str: PPAnsiChar; len: PInteger); stdcall;
 
@@ -173,6 +208,8 @@ type
   PFNGLUNIFORM1FPROC = procedure(location: Integer; v: Single); stdcall;
 
   PFNGLUNIFORM2FPROC = procedure(location: Integer; x, y: Single); stdcall;
+
+  PFNGLUNIFORM3FPROC = procedure(location: Integer; x, y, z: Single); stdcall;
 
   PFNGLUNIFORM4FPROC = procedure(location: Integer; x, y, z, w: Single); stdcall;
 
@@ -301,13 +338,20 @@ type
   { Master switch for the procedural blink in RenderEffect (default True). }
     FAutoBlink: Boolean;
     { Feature toggles for isolated measurement / disabling, default True.
-      MouseForceField = False parks the cursor marker outside the shader
-      (uMouseLocal = (-9999, -9999)) and stops velocity tracking, so the
-      touch force field costs exactly nothing. IdleLifeMotion = False
+      TouchEffectsEnabled = False parks the cursor marker outside the
+      shader (uMouseLocal = (-9999, -9999)) and stops velocity tracking,
+      so the touch effects cost exactly nothing. IdleLifeMotion = False
       zeroes the idle head drift and the saccade offsets, freezing the
       rest pose. NaturalBlinking = False pins FBlinkPhase at 0 and skips
       the blink timer entirely. }
-    FMouseForceField: Boolean;
+    FTouchEffectsEnabled: Boolean;
+    { Modular touch effect: which of the four TChaosTouchEffectStyle
+      variants the shader applies inside the cursor's influence radius,
+      and the accent colour ColorFade blends into (Glow tints its
+      brightness lift toward it as well; Forcefield / Ripple stay
+      colour-neutral and purely geometric). }
+    FTouchEffectStyle: TChaosTouchEffectStyle;
+    FTouchEffectColor: TAlphaColor;
     FIdleLifeMotion: Boolean;
     FClickThrough: Boolean;
     FLookTargetX, FLookTargetY: Single;
@@ -327,6 +371,18 @@ type
       host form, from ParentChanged. }
     FHasPendingStartupPlacement: Boolean;
     FPendingStartupPos: TPointF;
+    { Attached monitors, refreshed by RefreshDisplays (EnumDisplayMonitors
+      walks the WinAPI list in device order; index 0..Count-1 is exactly
+      what DisplayInfo / SendToDisplay address). Primary-first ordering
+      would reshuffle on every refresh, so the device order stays as-is
+      and CurrentDisplayIndex locates the entry geometrically instead. }
+    FDisplays: TArray<TChaosDisplayInfo>;
+    { Raised by SendToDisplay on the UI thread after the host window
+      jumped: RenderEffect (render thread) consumes it right before its
+      touch block to park uMouseLocal outside and zero the velocity, so
+      no cursor-delta spike fires across the monitor jump. Interlocked
+      because it is written UI-side and read/cleared render-side. }
+    FTouchResetPending: Integer;
     { Per-part include filter persisted on the avatar so the controls panel
       can toggle parts on/off live and re-load the current source. Empty means
       "load every part that survives the exclude keyword list"; non-empty means
@@ -388,7 +444,7 @@ type
     FLastCursorPos: TPoint;
     FMouseStillTimer: Single;
     FIdleBlend: Single;
-    { Mouse touch force field: cursor position converted into buffer
+    { Mouse touch effects: cursor position converted into buffer
       coordinates plus its smoothed velocity, uploaded as uMouseLocal /
       uMouseVel. (-9999, -9999) marks "outside the control" so the shader's
       radius test never fires; the velocity decays while outside. }
@@ -445,6 +501,7 @@ type
     FnGetUniformLocation: PFNGLGETUNIFORMLOCATIONPROC;
     FnUniform1f: PFNGLUNIFORM1FPROC;
     FnUniform2f: PFNGLUNIFORM2FPROC;
+    FnUniform3f: PFNGLUNIFORM3FPROC;
     FnUniform4f: PFNGLUNIFORM4FPROC;
     FnUniform1i: PFNGLUNIFORM1IPROC;
     FnUniform1ui: PFNGLUNIFORM1UIPROC;
@@ -529,8 +586,12 @@ type
     FLocH_LookX, FLocH_LookY, FLocH_PivotY: Integer;
     { Mouse touch-force uniforms: uMouseLocal is the cursor in buffer
       coordinates (-9999 = outside), uMouseVel its smoothed velocity in
-      buffer pixels per second. }
+      buffer pixels per second. uTouchEffectStyle selects which of the
+      four touch effects the shader applies, uTouchEffectColor carries
+      the accent colour (ColorFade target, Glow tint). }
     FLocH_MouseLocal, FLocH_MouseVel: Integer;
+    FLocH_TouchEffectStyle: Integer;
+    FLocH_TouchEffectColor: Integer;
     { Locations of the precomputed head-rotation trig endpoint uniforms
       (uTrigY / uTrigX, vec4 each). The CPU computes cos/sin once per frame;
       the shader mixes these endpoints per particle instead of evaluating
@@ -656,6 +717,13 @@ type
       convert cursor samples with plain arithmetic. Never call from
       RenderEffect - it runs on the render thread. }
     procedure RefreshScreenGeometry;
+    { Send-to-monitor plumbing: RefreshDisplays re-reads the WinAPI
+      monitor list into FDisplays; AddDisplay appends one entry (called
+      by the ChaosEnumMonitorProc callback through dwData = Self, which
+      is safe because the callback only runs while RefreshDisplays is
+      on the stack). }
+    procedure RefreshDisplays;
+    procedure AddDisplay(const AInfo: TMonitorInfoEx);
     procedure Draw(const ACanvas: ISkCanvas; const ADest: TRectF; const AOpacity: Single); override;
     procedure RenderEffect(const ACanvas: ISkCanvas; const ADest: TRectF; const ATime: Double); override;
   public
@@ -777,8 +845,14 @@ type
     { Natural blinking (rename of the legacy AutoBlink flag, same
       semantics): False pins the eyes open and skips the blink timer. }
     property NaturalBlinking: Boolean read FAutoBlink write SetNaturalBlinking default True;
-    { Touch force field / mouse swirl in the holo shader, default on. }
-    property MouseForceField: Boolean read FMouseForceField write FMouseForceField default True;
+    { Touch effects (soft force field / glow / colour fade / ripple in
+      the holo shader), default on. Renamed from MouseForceField - the
+      toggle now gates all four TChaosTouchEffectStyle variants. }
+    property TouchEffectsEnabled: Boolean read FTouchEffectsEnabled write FTouchEffectsEnabled default True;
+    { Which touch effect runs while the cursor is over the control. }
+    property TouchEffectStyle: TChaosTouchEffectStyle read FTouchEffectStyle write FTouchEffectStyle default tesForcefield;
+    { Accent colour of the ColorFade / Glow touch effects. }
+    property TouchEffectColor: TAlphaColor read FTouchEffectColor write FTouchEffectColor;
     { Idle breathing drift + micro-saccades while the cursor rests. }
     property IdleLifeMotion: Boolean read FIdleLifeMotion write FIdleLifeMotion default True;
     { Auto-blink timing: blink length in seconds (default 0.38), inside
@@ -866,6 +940,22 @@ type
       centre inside the parent and, for mesh sources, re-fits the particle
       clouds and the offscreen buffer to the new size. }
     procedure SetAvatarSize(AWidth: Single);
+    { ---- Send to Monitor ------------------------------------------------
+      DisplayCount / DisplayInfo enumerate the currently attached
+      monitors (list refreshed on every call, hot-plug safe): Index
+      0..Count-1, physical pixel Bounds, Primary flag. CurrentDisplayIndex
+      returns the index whose bounds contain the host window's centre
+      right now, or -1 when it sits on no attached monitor.
+      SendToDisplay snaps the host window onto the target monitor's full
+      BoundsRect in a per-monitor-DPI-safe order: pure position move
+      first (WM_DPICHANGED arrives while the old size is still valid),
+      then the exact target width / height, then a geometry refresh +
+      repaint so the render buffer and the cursor conversion follow
+      immediately. }
+    function DisplayCount: Integer;
+    function DisplayInfo(AIndex: Integer): TChaosDisplayInfo;
+    function CurrentDisplayIndex: Integer;
+    procedure SendToDisplay(AIndex: Integer);
     property AutoMeshFile: string read FAutoMeshFile;
     { Per-part include filter. Pass the mesh-name keywords (e.g. ['head','torso','arm_l','leg_l'])
       to load only those parts on the next LoadMeshFile call; pass nil to clear
@@ -972,7 +1062,12 @@ const
     // (-9999, -9999) while it is outside the control so the radius test
     // below never fires; uMouseVel is its smoothed velocity in buffer
     // pixels per second, driving the carry-along swirl.
-    'uniform vec2  uMouseLocal;'#10 + 'uniform vec2  uMouseVel;'#10 + ''#10 +
+    'uniform vec2  uMouseLocal;'#10 + 'uniform vec2  uMouseVel;'#10 +
+    // Touch effect selection + accent colour: uTouchEffectStyle picks the
+    // variant applied inside the cursor's smoothstep influence radius
+    // (0 = Forcefield, 1 = Glow, 2 = ColorFade, 3 = Ripple);
+    // uTouchEffectColor is the ColorFade blend target / Glow tint.
+    'uniform int   uTouchEffectStyle;'#10 + 'uniform vec3  uTouchEffectColor;'#10 + ''#10 +
     // uTrigY/uTrigX: cos/sin of the neck-pivot rotation at the smoothstep
     // weight endpoints (head w=1, shoulders w=0) - precomputed on the CPU so
     // project3D costs zero trig per particle.
@@ -1033,22 +1128,64 @@ const
     // coordinates drive the mouse touch force below AND the pixel splat
     // further down - the second project3D call is gone.
     '  vec2 p2 = vec2(0.0);'#10 + '  vec2 center = vec2(0.0);'#10 +
+    // Touch effect state shared by the style dispatch in the spring
+    // branch below and the colour / glow consumers in the splat section
+    // further down - hence declared here in main()'s scope, not inside
+    // the branch. touchInfluence is the butter-smooth
+    // smoothstep(radius, 0.0, dist) envelope around the cursor;
+    // touchDist / touchDir its raw distance and direction;
+    // touchGlow / touchRippleGlow the per-style brightness additions.
+    // All-zero (cursor outside, uMouseLocal parked at -9999, or falling
+    // particles) is exactly neutral: every consumer reads 0.
+    '  float touchInfluence = 0.0;'#10 + '  float touchDist = 0.0;'#10 + '  vec2  touchDir = vec2(0.0, 1.0);'#10 +
+    '  float touchGlow = 0.0;'#10 + '  float touchRippleGlow = 0.0;'#10 +
     // State machine: 0 = forming (reveal up to build scanline), 2 = fading (drop below despawn scanline).
     '  if (uState == 0) { if (tgt.y > uBuildScanY) visible = false; } else if (uState == 2) { if (pos.y <= uDespawnScanY) { if (vel.y < 1.0) vel.y = 240.0 + 140.0 * rand(float(idx)); falling = true; } }'#10 +
     // Falling: gravity carries the particle down and out of the viewport.
     '  if (falling) {'#10 + '    vel.y += 700.0 * dt;'#10 + '    pos += vel * dt;'#10 + '    p2 = project3D(pos);'#10 + '    center = toScreenFloat(p2);'#10 +
     // Otherwise spring toward target; add hover drift and per-style jitter.
     '  } else if (visible) {'#10 + '    vec3 d = tgt - pos;'#10 + '    float stiff = 220.0;'#10 + '    float damp = 18.0;'#10 +
-    // Touch force field: while the cursor is over the control, particles
-    // within 58 px of it (screen space) get a strong, soft radial push plus
-    // a carry-along in the cursor's direction of travel, a spatial dent in
-    // Z so the cloud reads as truly 3D-displaced, and the return spring
-    // locally yields (stiff reduced by up to 88 % at the cursor, damping
-    // eased by 55 %) so the cloud genuinely gives way instead of trembling
-    // against the force. The shared projection above (p2 / center) doubles
-    // as the screen-space position; once the cursor moves on, the
-    // untouched spring pulls everything organically back into the face.
-    '    p2 = project3D(pos);'#10 + '    center = toScreenFloat(p2);'#10 + '    if (uState <= 1) {'#10 + '      if (uMouseLocal.x > -9000.0) {'#10 + '        vec2 diff = center - uMouseLocal;'#10 + '        float dist = length(diff);'#10 + '        float radius = 58.0;'#10 + '        if (dist < radius && dist > 0.001) {'#10 + '          float falloff = pow(1.0 - dist / radius, 1.5);'#10 + '          stiff *= (1.0 - 0.88 * falloff);'#10 + '          damp *= (1.0 - 0.55 * falloff);'#10 + '          vel.xy += normalize(diff) * falloff * 1800.0 * dt;'#10 + '          vel.xy += uMouseVel * falloff * 3.5 * dt;'#10 + '          vel.z += falloff * 320.0 * dt;'#10 + '        }'#10 + '      }'#10 + '    }'#10 + '    vel += (d * stiff - vel * damp) * dt;'#10 + '    pos += vel * dt;'#10 + '    if (uState == 1) {'#10 + '      vec3 hover = vec3(sin(uTime * 1.3 + float(idx) * 0.37),'#10 + '                        cos(uTime * 1.1 + float(idx) * 0.53), 0.0) * 0.4;'#10 + '      pos += hover * dt;'#10 + '    }'#10 + '    pos += vec3(rand(float(idx) + uTime) - 0.5,'#10 +
+    // Touch effects: while the cursor is over the control, the shared
+    // influence falloff (smoothstep over the 58 px touch radius) drives
+    // the selected uTouchEffectStyle variant - Forcefield keeps the
+    // original strong, soft radial push plus carry-along, Z-dent and
+    // locally yielding spring; Glow / ColorFade stay purely visual (see
+    // the splat section); Ripple runs a soft harmonic sine wave. The
+    // shared projection above (p2 / center) doubles as the screen-space
+    // position; once the cursor moves on, everything eases organically
+    // back into the face.
+    '    p2 = project3D(pos);'#10 + '    center = toScreenFloat(p2);'#10 +
+    // Touch effects: the shared screen-space distance to the cursor and
+    // its butter-smooth influence falloff (smoothstep over the 58 px
+    // touch radius) drive every style variant below. touchInfluence /
+    // touchDist / touchDir stay at their neutral defaults (0 influence)
+    // whenever the cursor is outside the control, so the colour / glow
+    // consumers further down read exactly 0 and cost nothing.
+    '    if (uState <= 1) {'#10 + '      if (uMouseLocal.x > -9000.0) {'#10 + '        vec2 diff = center - uMouseLocal;'#10 + '        float dist = length(diff);'#10 + '        float radius = 58.0;'#10 + '        if (dist > 0.001) {'#10 + '          touchInfluence = smoothstep(radius, 0.0, dist);'#10 + '          if (touchInfluence > 0.0) {'#10 + '            touchDist = dist;'#10 + '            touchDir = diff / dist;'#10 +
+    // Style 0 (Forcefield): the original behaviour kept exactly as it
+    // was - particles within the radius are softly pushed away from the
+    // cursor, carried along by its velocity and dented in Z, with the
+    // return spring locally yielding so the cloud genuinely gives way.
+    // The max() clamp on the pow() base only guards the float rounding
+    // edge at dist == radius; inside this branch dist < radius already
+    // holds because the smoothstep envelope above is > 0.
+    '            if (uTouchEffectStyle == 0) {'#10 + '              float falloff = pow(max(1.0 - dist / radius, 0.0), 1.5);'#10 + '              stiff *= (1.0 - 0.88 * falloff);'#10 + '              damp *= (1.0 - 0.55 * falloff);'#10 + '              vel.xy += touchDir * falloff * 1800.0 * dt;'#10 + '              vel.xy += uMouseVel * falloff * 3.5 * dt;'#10 + '              vel.z += falloff * 320.0 * dt;'#10 +
+    // Style 3 (Ripple): a tuned harmonic sine wave around the cursor -
+    // wider rings (freq 0.26), faster phase (7.5 rad/s) - displaces the
+    // cloud clearly but stays a wave, never a push: the impulses are
+    // purely harmonic, and the spring itself yields softly inside the
+    // influence (stiff -65 %, damp -35 % at the centre) so the rings
+    // travel through the cloud instead of fighting the return spring.
+    // touchRippleGlow rides the same wave for the brightness shimmer
+    // in the splat section below.
+    '            } else if (uTouchEffectStyle == 3) {'#10 + '              float wave = sin(dist * 0.26 - uTime * 7.5);'#10 + '              float ring = wave * touchInfluence;'#10 + '              stiff *= (1.0 - 0.65 * touchInfluence);'#10 + '              damp  *= (1.0 - 0.35 * touchInfluence);'#10 + '              vel.xy += touchDir * ring * 1150.0 * dt;'#10 + '              vel.z  += ring * 850.0 * dt;'#10 + '              touchRippleGlow = (0.5 + 0.5 * wave) * touchInfluence;'#10 + '            }'#10 + '          }'#10 +
+    // Styles 1 (Glow) and 2 (ColorFade) deliberately leave position and
+    // velocity untouched - no displacement at all; they act purely on
+    // brightness / colour in the splat section below via
+    // touchInfluence / touchGlow, which fade smoothly back to neutral
+    // as the cursor moves away.
+    '        }'#10 + '      }'#10 + '    }'#10 + '    touchGlow = (uTouchEffectStyle == 1) ? touchInfluence : 0.0;'#10 +
+    '    vel += (d * stiff - vel * damp) * dt;'#10 + '    pos += vel * dt;'#10 + '    if (uState == 1) {'#10 + '      vec3 hover = vec3(sin(uTime * 1.3 + float(idx) * 0.37),'#10 + '                        cos(uTime * 1.1 + float(idx) * 0.53), 0.0) * 0.4;'#10 + '      pos += hover * dt;'#10 + '    }'#10 + '    pos += vec3(rand(float(idx) + uTime) - 0.5,'#10 +
     '                rand(float(idx) * 1.7 + uTime) - 0.5,'#10 + '                rand(float(idx) * 2.3 + uTime) - 0.5) * uJitter;'#10 + '    if (uHoloStyle == 2) {'#10 + '      pos += vec3(rand(float(idx) * 0.5 + uTime * 0.7) - 0.5,'#10 + '                  rand(float(idx) * 0.9 + uTime * 0.5) - 0.5, 0.0) * 0.9;'#10 + '    }'#10 + '  }'#10 +
     // Write back position and velocity.
     '  P[idx].px = pos.x; P[idx].py = pos.y; P[idx].pz = pos.z;'#10 + '  P[idx].vx = vel.x; P[idx].vy = vel.y; P[idx].vz = vel.z;'#10 + '  if (!visible) return;'#10 + ''#10 +
@@ -1079,7 +1216,15 @@ const
     // $FF with a non-white RGB; anything else falls back to uFaceColor.
     // Speaking mouth particles drift toward the accent colour in step with
     // the speech pulse.
-    '  vec4 col = uFaceColor;'#10 + '  if (P[idx].color != 0xFFFFFFFFu) {'#10 + '    uint colMark = (P[idx].color >> 24u) & 0xFFu;'#10 + '    if (colMark == 0xFEu || colMark == 0xFFu)'#10 + '      col = unpackColor(P[idx].color);'#10 + '  }'#10 + ''#10 + '  col.rgb = mix(col.rgb, uAccentColor.rgb, 0.50 * speech);'#10 + ''#10 +
+    '  vec4 col = uFaceColor;'#10 + '  if (P[idx].color != 0xFFFFFFFFu) {'#10 + '    uint colMark = (P[idx].color >> 24u) & 0xFFu;'#10 + '    if (colMark == 0xFEu || colMark == 0xFFu)'#10 + '      col = unpackColor(P[idx].color);'#10 + '  }'#10 + ''#10 + '  col.rgb = mix(col.rgb, uAccentColor.rgb, 0.50 * speech);'#10 +
+    // Touch effects on colour: Style 2 (ColorFade) blends the particle
+    // colour softly into the chosen TouchEffectColor inside the
+    // cursor's influence and fades it back out toward the base colour
+    // as the distance grows - mix() over the smoothstep influence has
+    // no hard edge by construction. Style 1 (Glow) tints the lifted
+    // brightness toward the accent colour as well, so the glow reads
+    // in the user's chosen colour instead of plain white.
+    '  if (touchInfluence > 0.0) {'#10 + '    if (uTouchEffectStyle == 2)'#10 + '      col.rgb = mix(col.rgb, uTouchEffectColor, touchInfluence);'#10 + '    else if (uTouchEffectStyle == 1)'#10 + '      col.rgb = mix(col.rgb, uTouchEffectColor, 0.35 * touchInfluence);'#10 + '  }'#10 + ''#10 +
     // Flicker, inner-core pulse, style modulation, and final alpha; fade out smoothly while falling.
     // Eye particles dim smoothly with uEyeOpeness so a blink reads as a
     // holographic fade-out / fade-in instead of a geometric lid drop; the
@@ -1109,7 +1254,13 @@ const
     // dense surface reads as a lit 3D form.
     '    float topLight = clamp(0.55 - normal.y * 0.45, 0.25, 1.25);'#10 + '    float frontLight = clamp(normal.z * 0.65 + 0.45, 0.25, 1.2);'#10 + '    baseIntensity *= topLight * frontLight;'#10 + '    baseIntensity += rim * 0.45;'#10 + '  } else {'#10 +
     // Unknown style id: plain rim edge boost only.
-    '    baseIntensity += rim * 0.3;'#10 + '  }'#10 + ''#10 + '  baseIntensity *= pulse * uAlpha;'#10 + '  if (falling) baseIntensity *= clamp(1.0 - (pos.y - 60.0) / 90.0, 0.0, 1.0);'#10 + ''#10 +
+    '    baseIntensity += rim * 0.3;'#10 + '  }'#10 + ''#10 + '  baseIntensity *= pulse * uAlpha;'#10 +
+    // Touch effects on brightness: Style 1 (Glow) lifts the luminance
+    // softly inside the influence radius (1.0 + influence-scaled boost);
+    // Style 3 (Ripple) adds the subtle shimmer riding its sine wave.
+    // Both scale with the smoothstep influence so they fade out
+    // butter-smooth with no hard rim at the touch border.
+    '  baseIntensity *= 1.0 + 1.4 * touchGlow + 0.35 * touchRippleGlow;'#10 + '  if (falling) baseIntensity *= clamp(1.0 - (pos.y - 60.0) / 90.0, 0.0, 1.0);'#10 + ''#10 +
     // Splat a core+glow kernel into uOutput with premultiplied-alpha compositing.
     '  float coreR2 = coreRadius * coreRadius;'#10 + '  float glowR2 = glowRadius * glowRadius;'#10 +
     // Glow-kernel softness: the denominator fraction widens the falloff;
@@ -1140,7 +1291,9 @@ begin
     keeps the eased phase curve resolvable even at the 15 FPS idle frame
     rate and varies by +-25 ms per blink. }
   FAutoBlink := True;
-  FMouseForceField := True;
+  FTouchEffectsEnabled := True;
+  FTouchEffectStyle := tesForcefield;
+  FTouchEffectColor := $FF00BFFF;
   FIdleLifeMotion := True;
   FBlinkTimer := 0;
   FBlinkPhase := 0;
@@ -1451,6 +1604,7 @@ begin
   FnGetUniformLocation := GetProc('glGetUniformLocation');
   FnUniform1f := GetProc('glUniform1f');
   FnUniform2f := GetProc('glUniform2f');
+  FnUniform3f := GetProc('glUniform3f');
   FnUniform4f := GetProc('glUniform4f');
   FnUniform1i := GetProc('glUniform1i');
   FnUniform1ui := GetProc('glUniform1ui');
@@ -1579,6 +1733,8 @@ begin
   FLocH_LookY := FnGetUniformLocation(FHoloProgram, 'uLookY');
   FLocH_MouseLocal := FnGetUniformLocation(FHoloProgram, 'uMouseLocal');
   FLocH_MouseVel := FnGetUniformLocation(FHoloProgram, 'uMouseVel');
+  FLocH_TouchEffectStyle := FnGetUniformLocation(FHoloProgram, 'uTouchEffectStyle');
+  FLocH_TouchEffectColor := FnGetUniformLocation(FHoloProgram, 'uTouchEffectColor');
   FLocH_PivotY := FnGetUniformLocation(FHoloProgram, 'uPivotY');
   FLocH_HoloStyle := FnGetUniformLocation(FHoloProgram, 'uHoloStyle');
   FLocH_ParticleSize := FnGetUniformLocation(FHoloProgram, 'uParticleSize');
@@ -2288,15 +2444,29 @@ begin
   FLookX := FLookX + ((FLookTargetX + IdleHeadX + FSaccadeSmoothX * (0.35 + 0.65 * FIdleBlend)) - FLookX) * EnsureRange(4.5 * DeltaTime, 0, 1);
   FLookY := FLookY + ((FLookTargetY + IdleHeadY + FSaccadeSmoothY * (0.35 + 0.65 * FIdleBlend)) - FLookY) * EnsureRange(4.5 * DeltaTime, 0, 1);
 
+  { Send-to-monitor jump: the host window was moved by SendToDisplay on
+    the UI thread. Park the touch state outside and zero the velocity
+    here on the render thread (the fields below are owned by this
+    thread once per frame), so the next cursor sample starts from a calm
+    field instead of a delta spike across monitors. }
+  if TInterlocked.Exchange(FTouchResetPending, 0) <> 0 then
+  begin
+    FMouseLocalX := -9999;
+    FMouseLocalY := -9999;
+    FMouseVelX := 0;
+    FMouseVelY := 0;
+    FMouseInside := False;
+  end;
+
   { Touch force field: while the cursor is over the control its local
     position is scaled into buffer coordinates and the per-frame screen
     delta feeds a smoothed velocity (buffer px / s, clamped to +-800).
     Outside, the position marker goes to (-9999, -9999) so the shader's
     radius test never fires and the velocity decays exponentially, so a
-    re-entering cursor starts from a calm field. MouseForceField = False
-    takes the same outside path unconditionally - no velocity tracking,
-    no per-frame state updates, the shader branch never fires. }
-  if FMouseForceField and (not FDragging) and CurValid and (Local.X >= 0) and (Local.Y >= 0) and (Local.X < FControlW) and (Local.Y < FControlH) then
+    re-entering cursor starts from a calm field. TouchEffectsEnabled =
+    False takes the same outside path unconditionally - no velocity
+    tracking, no per-frame state updates, the shader branch never fires. }
+  if FTouchEffectsEnabled and (not FDragging) and CurValid and (Local.X >= 0) and (Local.Y >= 0) and (Local.X < FControlW) and (Local.Y < FControlH) then
   begin
     NewLocalX := Local.X * (FBufW / Max(FControlW, 1));
     NewLocalY := Local.Y * (FBufH / Max(FControlH, 1));
@@ -2813,6 +2983,12 @@ begin
     velocity for the carry-along swirl. }
   FnUniform2f(FLocH_MouseLocal, FMouseLocalX, FMouseLocalY);
   FnUniform2f(FLocH_MouseVel, FMouseVelX, FMouseVelY);
+  { Touch effect variant + accent colour; the colour's alpha byte is
+    unused (brightness comes from touchInfluence), so only RGB goes up
+    as the vec3 the shader expects. }
+  FnUniform1i(FLocH_TouchEffectStyle, Ord(FTouchEffectStyle));
+  ColorToVec4(FTouchEffectColor, R, G, B, A);
+  FnUniform3f(FLocH_TouchEffectColor, R, G, B);
   FnUniform1f(FLocH_PivotY, FPivotY);
   UploadTrigUniforms(FLocH_TrigY, FLocH_TrigX);
   FnUniform1i(FLocH_HoloStyle, Ord(FHoloStyle));
@@ -3791,6 +3967,177 @@ begin
   end;
 end;
 
+{ Monitor enumeration imports: EnumDisplayMonitors / GetMonitorInfoW
+  live in Winapi.MultiMon, which the uses clause does not pull in. Same
+  pattern as the GL entry points above - declared here, resolved by the
+  Windows loader, no extra uses entry needed. SetWindowPos and its
+  SWP_* flags come from Winapi.Windows (already in uses). }
+function EnumDisplayMonitors(hdc: HDC; lprcClip: PRect;
+  lpfnEnum: TMonitorEnumProc; dwData: NativeInt): LongBool; stdcall; external user32 name 'EnumDisplayMonitors';
+function GetMonitorInfoW(hMonitor: THandle; lpmi: PMonitorInfoEx): LongBool; stdcall; external user32 name 'GetMonitorInfoW';
+
+{ Fills one TChaosDisplayInfo slot from the MONITORINFOEX the callback
+  received. Keeps the physical rcMonitor bounds - the very coordinates
+  SetWindowPos expects, so no logical / physical conversion (and no
+  double-scaling on mixed-DPI desktops) ever happens between the
+  enumeration and the move. }
+procedure TSkChaos.AddDisplay(const AInfo: TMonitorInfoEx);
+var
+  N: Integer;
+begin
+  N := Length(FDisplays);
+  SetLength(FDisplays, N + 1);
+  FDisplays[N].Bounds := AInfo.rcMonitor;
+  FDisplays[N].Primary := (AInfo.dwFlags and MONITORINFOF_PRIMARY) <> 0;
+end;
+
+{ EnumDisplayMonitors callback: appends every attached monitor to
+  FDisplays via dwData = Self. The WinAPI contract guarantees the
+  callback only runs while EnumDisplayMonitors itself is on the stack,
+  so borrowing Self without locking is safe. }
+function ChaosEnumMonitorProc(hMonitor: THandle; hdcMonitor: HDC;
+  lprcMonitor: PRect; dwData: NativeInt): LongBool; stdcall;
+var
+  Info: TMonitorInfoEx;
+begin
+  FillChar(Info, SizeOf(Info), 0);
+  Info.cbSize := SizeOf(Info);
+  if GetMonitorInfoW(hMonitor, @Info) then
+    TSkChaos(dwData).AddDisplay(Info);
+  Result := True;
+end;
+
+procedure TSkChaos.RefreshDisplays;
+begin
+  { Re-read the WinAPI monitor list on every call: the panel rebuilds its
+    menu right before opening it, so hot-plugged displays (beamer on,
+    dock off) appear immediately and stale entries are gone. The
+    standalone callback matches TMonitorEnumProc exactly, so it passes
+    straight into the parameter - no procedural temp variable needed. }
+  FDisplays := nil;
+  EnumDisplayMonitors(0, nil, ChaosEnumMonitorProc, NativeInt(Self));
+end;
+
+function TSkChaos.DisplayCount: Integer;
+begin
+  RefreshDisplays;
+  Result := Length(FDisplays);
+end;
+
+function TSkChaos.DisplayInfo(AIndex: Integer): TChaosDisplayInfo;
+begin
+  RefreshDisplays;
+  if (AIndex >= 0) and (AIndex < Length(FDisplays)) then
+    Result := FDisplays[AIndex]
+  else
+  begin
+    Result.Bounds := TRect.Empty;
+    Result.Primary := False;
+  end;
+end;
+
+function TSkChaos.CurrentDisplayIndex: Integer;
+var
+  I: Integer;
+  F: TForm;
+  Wnd: HWND;
+  WR: TRect;
+  C: TPoint;
+begin
+  { Locate the monitor carrying the host window by its centre point -
+    robust when a window straddles two monitors (the centre decides) and
+    cheaper than MonitorFromPoint after RefreshDisplays already brought
+    the full list in. }
+  Result := -1;
+  RefreshDisplays;
+  if Length(FDisplays) = 0 then
+    Exit;
+  F := FindOwnerForm;
+  if F = nil then
+    Exit;
+  { Physical centre via GetWindowRect: FDisplays carries physical pixel
+    bounds while FMX's F.Left / F.Width are logical (scaled by the
+    current monitor DPI), so mixing them would pick the wrong monitor on
+    a mixed-DPI desktop. TRect.Contains expects a TPoint. }
+  Wnd := WindowHandleToPlatform(F.Handle).Wnd;
+  if not GetWindowRect(Wnd, WR) then
+    Exit;
+  C := Point((WR.Left + WR.Right) div 2, (WR.Top + WR.Bottom) div 2);
+  for I := 0 to High(FDisplays) do
+    if FDisplays[I].Bounds.Contains(C) then
+      Exit(I);
+end;
+
+procedure TSkChaos.SendToDisplay(AIndex: Integer);
+var
+  F: TForm;
+  Wnd: HWND;
+  R: TRect;
+  FracX, FracY, NewX, NewY: Single;
+begin
+  RefreshDisplays;
+  if (AIndex < 0) or (AIndex > High(FDisplays)) then
+    Exit;
+  F := FindOwnerForm;
+  if F = nil then
+    Exit;
+  R := FDisplays[AIndex].Bounds;
+  if R.IsEmpty then
+    Exit;
+  Wnd := WindowHandleToPlatform(F.Handle).Wnd;
+  { Capture the avatar's position as fractions of the current client
+    area BEFORE the move: fractions are scale-independent, so the anchor
+    survives the per-monitor DPI change (a bottom-right avatar stays
+    bottom-right, whatever scale the target monitor runs). }
+  if F.ClientWidth > 0 then
+    FracX := (Position.X + Width * 0.5) / F.ClientWidth
+  else
+    FracX := 1.0;
+  if F.ClientHeight > 0 then
+    FracY := (Position.Y + Height * 0.5) / F.ClientHeight
+  else
+    FracY := 1.0;
+  { Per-monitor-DPI-safe order (e.g. laptop 125 % -> external 100 %):
+    (1) the pure position move ships the window into the target monitor
+        while its old size is still valid - Windows derives the
+        WM_DPICHANGED suggested rectangle from real coordinates, so
+        nothing is half-clipped at the old monitor's edge;
+    (2) only then the exact target width / height follow, completing the
+        exact fit onto the monitor's BoundsRect. SWP_NOZORDER keeps an
+        active StayOnTop z-order untouched, SWP_NOACTIVATE leaves the
+        focus with the panel the user clicked. Physical pixels flow
+        untouched from MONITORINFO into SetWindowPos, so no scale factor
+        is ever applied twice. }
+  SetWindowPos(Wnd, 0, R.Left, R.Top, 0, 0,
+    SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+  SetWindowPos(Wnd, 0, R.Left, R.Top, R.Width, R.Height,
+    SWP_NOZORDER or SWP_NOACTIVATE);
+  { SetWindowPos dispatches its WM_SIZE / WM_DPICHANGED synchronously,
+    so the form metrics are already final here: re-anchor the avatar at
+    the captured fractions of the new client area (bottom-right stays
+    bottom-right) and clamp it fully inside, so a smaller target monitor
+    can never park it half off-screen. }
+  NewX := F.ClientWidth * FracX - Width * 0.5;
+  NewY := F.ClientHeight * FracY - Height * 0.5;
+  ClampIntoParent(NewX, NewY);
+  Position.X := NewX;
+  Position.Y := NewY;
+  { The avatar control lives inside the now-moved host: re-measure its
+    screen rect immediately so the very next render frame converts the
+    cursor against the new origin (the per-Draw refresh would catch up a
+    frame later at the latest). The touch reset itself runs on the
+    render thread via FTouchResetPending: parking uMouseLocal outside
+    until the next real cursor sample prevents any velocity spike across
+    the jump, so the TouchEffects land exactly under the pointer on the
+    new monitor. }
+  RefreshScreenGeometry;
+  TInterlocked.Exchange(FTouchResetPending, 1);
+  { Short repaint of the FMX surface: Invalidate schedules a full scene
+    redraw, whose Draw -> RefreshScreenGeometry pass sees the final
+    DPI-adjusted form metrics. }
+  F.Invalidate;
+end;
+
 procedure TSkChaos.ApplyStayOnTop;
 var
   F: TForm;
@@ -4201,8 +4548,14 @@ begin
     Ini.WriteFloat('Animation', 'BlinkDuration', FBlinkDuration);
     Ini.WriteFloat('Animation', 'NeckPivotRatio', FNeckPivotRatio);
 
-    { Behavior toggles under [Face], matching the panel's BEHAVIOR group. }
-    Ini.WriteBool('Face', 'MouseForceField', FMouseForceField);
+    { Behavior toggles under [Face], matching the panel's BEHAVIOR group.
+      TouchEffectsEnabled is the renamed MouseForceField key; old presets
+      carrying the legacy key are read back as the enable flag, new
+      presets write both so any older build still round-trips. }
+    Ini.WriteBool('Face', 'TouchEffectsEnabled', FTouchEffectsEnabled);
+    Ini.WriteBool('Face', 'MouseForceField', FTouchEffectsEnabled);
+    Ini.WriteInteger('Face', 'TouchEffectStyle', Ord(FTouchEffectStyle));
+    WriteColor('Face', 'TouchEffectColor', FTouchEffectColor);
     Ini.WriteBool('Face', 'IdleLifeMotion', FIdleLifeMotion);
     Ini.WriteBool('Face', 'NaturalBlinking', FAutoBlink);
 
@@ -4324,8 +4677,15 @@ begin
       NeckPivotRatio := Ini.ReadFloat('Animation', 'NeckPivotRatio', FNeckPivotRatio);
 
       { Behavior toggles ([Face] section); the checkbox panel and the
-        tray menu pick these up via SyncControlsFromChaos after load. }
-      MouseForceField := Ini.ReadBool('Face', 'MouseForceField', FMouseForceField);
+        tray menu pick these up via SyncControlsFromChaos after load.
+        TouchEffectsEnabled reads the legacy MouseForceField key when the
+        new one is absent so old presets keep working. }
+      TouchEffectsEnabled := Ini.ReadBool('Face', 'TouchEffectsEnabled',
+        Ini.ReadBool('Face', 'MouseForceField', FTouchEffectsEnabled));
+      I := Ini.ReadInteger('Face', 'TouchEffectStyle', Ord(FTouchEffectStyle));
+      if (I >= Ord(Low(TChaosTouchEffectStyle))) and (I <= Ord(High(TChaosTouchEffectStyle))) then
+        TouchEffectStyle := TChaosTouchEffectStyle(I);
+      TouchEffectColor := TAlphaColor(StrToIntDef(Ini.ReadString('Face', 'TouchEffectColor', '$' + IntToHex(FTouchEffectColor, 8)), Integer(FTouchEffectColor)));
       IdleLifeMotion := Ini.ReadBool('Face', 'IdleLifeMotion', FIdleLifeMotion);
       NaturalBlinking := Ini.ReadBool('Face', 'NaturalBlinking', FAutoBlink);
 

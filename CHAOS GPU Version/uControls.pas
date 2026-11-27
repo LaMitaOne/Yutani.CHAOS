@@ -36,7 +36,7 @@ uses
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
   System.Math, System.Generics.Collections, FMX.Types, FMX.Controls, FMX.Forms,
   FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.ListBox, FMX.Colors, FMX.Layouts,
-  FMX.TabControl, Yutani.Chaos.Skia.GPU, Yutani.MeshLoader;
+  FMX.TabControl, FMX.Menus, Yutani.Chaos.Skia.GPU, Yutani.MeshLoader;
 
 type
   TForm2 = class(TForm)
@@ -90,11 +90,22 @@ type
       shown. }
     FDragCheck: TCheckBox;
     FAutoDimCheck: TCheckBox;
+    { Send-to-monitor dropdown: rebuilt from the live display list every
+      time it opens (hot-plug safe), so no stale entries survive a dock
+      / beamer change. The check mark marks the monitor the host window
+      currently sits on. }
+    FMonitorMenu: TPopupMenu;
     { Behavior toggles (Face / Animation tab): kept as fields so preset
       loads can re-sync them without re-scanning the control tree. }
-    FMouseForceCheck: TCheckBox;
+    FTouchEffectsCheck: TCheckBox;
     FIdleLifeCheck: TCheckBox;
     FNaturalBlinkCheck: TCheckBox;
+    { TouchEffects row: effect style combo (ItemIndex =
+      Ord(TChaosTouchEffectStyle)) and accent colour picker sitting
+      directly right of the checkbox; both enable/disable with its
+      Checked state (UpdateTouchEffectEnable). }
+    FTouchEffectCombo: TComboBox;
+    FTouchEffectColorBox: TColorComboBox;
     FTbAvatarSize: TTrackBar;
     { Mesh tab: combo picking which mesh part acts as the eyes. '(Auto)' is
       the first entry followed by every MeshNames entry; Tag stays unused,
@@ -144,6 +155,10 @@ type
       GChaos.CustomEyePartName and rebuilds the particle cloud so the eye
       flag lands on the chosen part. }
     procedure OnEyePartChange(Sender: TObject);
+    { TouchEffects row: accent colour picker handler plus the shared
+      enable/disable refresh for both selectors. }
+    procedure OnTouchEffectColorChange(Sender: TObject);
+    procedure UpdateTouchEffectEnable;
     procedure RebuildPartsList;
     { Refreshes the eye-part combo from GChaos.MeshNames: '(Auto)' first,
       then every part name, selection mirroring CustomEyePartName. Also
@@ -161,6 +176,10 @@ type
       the mode off and walks the entity out. }
     procedure OnTestHighlighter(Sender: TObject);
     procedure OnDismissHighlight(Sender: TObject);
+    { Send-to-monitor: opens the live monitor list under the button and
+      applies the picked entry via GChaos.SendToDisplay. }
+    procedure OnSendToScreen(Sender: TObject);
+    procedure OnPickMonitor(Sender: TObject);
     { Form lifecycle: hide keeps drag mode active (presets round-trip it
       and the tray menu can restore click-through), show refreshes the
       overlay controls from the live avatar. }
@@ -283,6 +302,9 @@ const
   { Combobox tags. }
   tgHoloStyle = 1;
   tgEmotion = 2;
+  { Touch effect style combo: ItemIndex maps 1:1 onto
+    Ord(TChaosTouchEffectStyle) in the CHAOS unit. }
+  tgTouchEffectStyle = 3;
   { Checkbox tags. }
   tgActive = 1;
   tgAdaptiveFPS = 2;
@@ -292,7 +314,7 @@ const
   tgClickThrough = 6;
   tgAutoParts = 7;
   tgAutoDim = 8;
-  tgMouseForce = 9;
+  tgTouchEffects = 9;
   tgIdleLife = 10;
   tgNaturalBlink = 11;
 
@@ -305,6 +327,11 @@ const
   BTN_W = 260;
 
 procedure TForm2.FormCreate(Sender: TObject);
+var
+  { Row cursor captured before the TouchEffects checkbox is added so the
+    style combo and the colour picker can sit on the same row, directly
+    right of the toggle. }
+  TouchY: Single;
 begin
   Caption := 'Yutani Chaos - Controls';
   Self.ClientWidth := PANEL_W;
@@ -479,9 +506,43 @@ begin
     FTbNeckPivot := AddTrack(tgNeckPivot, 'Neck pivot', 0.0, 1.0, 0.01, GChaos.NeckPivotRatio);
     AddSection('BEHAVIOR');
     { Feature toggles for isolated measurement / disabling - the direct
-      counterparts of the MouseForceField / IdleLifeMotion /
+      counterparts of the TouchEffectsEnabled / IdleLifeMotion /
       NaturalBlinking properties on TSkChaos. }
-    FMouseForceCheck := AddCheck(tgMouseForce, 'Mouse touch force-field', GChaos.MouseForceField);
+    TouchY := FNextY;
+    FTouchEffectsCheck := AddCheck(tgTouchEffects, 'TouchEffects', GChaos.TouchEffectsEnabled);
+    { Narrow the checkbox so the style combo and the accent colour picker
+      fit onto the same row, directly right of the toggle. }
+    FTouchEffectsCheck.Width := 150;
+    { Effect style combo: the four entries map 1:1 onto
+      TChaosTouchEffectStyle (FMX TComboBox is a pure drop-down list, the
+      built-in equivalent of the VCL csDropDownList). }
+    FTouchEffectCombo := TComboBox.Create(Self);
+    FTouchEffectCombo.Parent := FCurrentTab;
+    FTouchEffectCombo.Position.X := CTRL_X + 160;
+    FTouchEffectCombo.Position.Y := TouchY;
+    FTouchEffectCombo.Width := 140;
+    FTouchEffectCombo.Items.Add('Forcefield');
+    FTouchEffectCombo.Items.Add('Glow');
+    FTouchEffectCombo.Items.Add('ColorFade');
+    FTouchEffectCombo.Items.Add('Ripple');
+    { Initial selection assigned before OnChange is wired so the
+      programmatic setup cannot fire the handler (same pattern as the
+      per-part colour pickers). }
+    FTouchEffectCombo.ItemIndex := Ord(GChaos.TouchEffectStyle);
+    FTouchEffectCombo.Tag := tgTouchEffectStyle;
+    FTouchEffectCombo.OnChange := OnComboChange;
+    { Touch accent colour picker right beside the style combo, built
+      after the same component pattern as the per-part colour
+      selectors (TColorComboBox). }
+    FTouchEffectColorBox := TColorComboBox.Create(Self);
+    FTouchEffectColorBox.Parent := FCurrentTab;
+    FTouchEffectColorBox.Position.X := CTRL_X + 310;
+    FTouchEffectColorBox.Position.Y := TouchY;
+    FTouchEffectColorBox.Width := 100;
+    FTouchEffectColorBox.Color := GChaos.TouchEffectColor;
+    FTouchEffectColorBox.OnChange := OnTouchEffectColorChange;
+    { Both selectors follow the TouchEffects checkbox's Checked state. }
+    UpdateTouchEffectEnable;
     FIdleLifeCheck := AddCheck(tgIdleLife, 'Idle breathing & micro-glances', GChaos.IdleLifeMotion);
     FNaturalBlinkCheck := AddCheck(tgNaturalBlink, 'Natural random blinking', GChaos.NaturalBlinking);
 
@@ -503,7 +564,10 @@ begin
       cursor hovers its screen rect, back to full when it leaves. }
     FAutoDimCheck := AddCheck(tgAutoDim, 'Auto-dim on mouseover', GChaos.AutoDimOnHover);
     FNextY := FNextY + 4;
-    FTbAvatarSize := AddTrack(tgAvatarSize, 'Avatar size (px)', 140, 640, 4, GChaos.Width);
+    FTbAvatarSize := AddTrack(tgAvatarSize, 'Avatar size (px)', 140, 1200, 4, GChaos.Width);
+    { Send to Screen: opens the live monitor list; picking an entry moves
+      and exactly fits the overlay window onto that monitor. }
+    AddButton('Send to Screen', OnSendToScreen);
     AddSection('PRESETS');
     { The per-head slot saves next to the executable, where the automatic
       reload finds it; the two dialog buttons cover sharing setups between
@@ -959,6 +1023,26 @@ begin
   GChaos.SetPartColor(Integer(ccb.Tag), ccb.Color);
 end;
 
+procedure TForm2.OnTouchEffectColorChange(Sender: TObject);
+begin
+  if not Assigned(GChaos) then
+    Exit;
+  { Touch accent colour: the ColorFade blend target and Glow tint the
+    holo shader receives as uTouchEffectColor. }
+  GChaos.TouchEffectColor := (Sender as TColorComboBox).Color;
+end;
+
+procedure TForm2.UpdateTouchEffectEnable;
+begin
+  { Both selectors are meaningful only while the touch effects are on,
+    so their enabled state mirrors the TouchEffects checkbox (they stay
+    visible either way - the disabled look communicates the toggle). }
+  if Assigned(FTouchEffectCombo) then
+    FTouchEffectCombo.Enabled := Assigned(FTouchEffectsCheck) and FTouchEffectsCheck.IsChecked;
+  if Assigned(FTouchEffectColorBox) then
+    FTouchEffectColorBox.Enabled := Assigned(FTouchEffectsCheck) and FTouchEffectsCheck.IsChecked;
+end;
+
 procedure TForm2.SyncEyeCombo;
 var
   Names: TArray<string>;
@@ -1168,6 +1252,8 @@ begin
       GChaos.HoloStyle := THoloStyle(cb.ItemIndex);
     tgEmotion:
       GChaos.EmotionMode := TEmotionMode(cb.ItemIndex);
+    tgTouchEffectStyle:
+      GChaos.TouchEffectStyle := TChaosTouchEffectStyle(cb.ItemIndex);
   end;
 end;
 
@@ -1193,8 +1279,13 @@ begin
       GChaos.ClickThrough := cb.IsChecked;
     tgAutoDim:
       GChaos.AutoDimOnHover := cb.IsChecked;
-    tgMouseForce:
-      GChaos.MouseForceField := cb.IsChecked;
+    tgTouchEffects:
+      begin
+        GChaos.TouchEffectsEnabled := cb.IsChecked;
+        { The style / colour selectors only matter while the touch
+          effects are on, so their enabled state follows the toggle. }
+        UpdateTouchEffectEnable;
+      end;
     tgIdleLife:
       GChaos.IdleLifeMotion := cb.IsChecked;
     tgNaturalBlink:
@@ -1393,6 +1484,60 @@ begin
   GChaos.DismissHighlight;
 end;
 
+procedure TForm2.OnSendToScreen(Sender: TObject);
+var
+  I, Cnt, CurIdx: Integer;
+  Info: TChaosDisplayInfo;
+  Item: TMenuItem;
+  Btn: TControl;
+  P: TPointF;
+begin
+  if not Assigned(GChaos) then
+    Exit;
+  { Live list: read the displays now so a beamer plugged in since the
+    last click appears immediately. Nothing attached -> nothing to do. }
+  Cnt := GChaos.DisplayCount;
+  if Cnt <= 0 then
+    Exit;
+  CurIdx := GChaos.CurrentDisplayIndex;
+  { Rebuild the menu as a fresh object on every click (FreeAndNil +
+    Create - FMX popup menus have no reliable Clear, and a fresh build
+    can never keep a stale entry alive). The IsChecked item marks the
+    monitor the host window currently sits on. }
+  FreeAndNil(FMonitorMenu);
+  FMonitorMenu := TPopupMenu.Create(Self);
+  for I := 0 to Cnt - 1 do
+  begin
+    Info := GChaos.DisplayInfo(I);
+    Item := TMenuItem.Create(FMonitorMenu);
+    if Info.Primary then
+      Item.Text := Format('Monitor %d (%dx%d - Primary)', [I + 1, Info.Bounds.Width, Info.Bounds.Height])
+    else
+      Item.Text := Format('Monitor %d (%dx%d)', [I + 1, Info.Bounds.Width, Info.Bounds.Height]);
+    Item.Tag := I;
+    Item.IsChecked := (I = CurIdx);
+    Item.OnClick := OnPickMonitor;
+    FMonitorMenu.AddObject(Item);
+  end;
+  { Dropdown anchored under the button's bottom-left corner. TPopupMenu
+    .Popup takes a screen point in FMX, so the local corner goes through
+    LocalToScreen (the control tree's conversion to global coordinates). }
+  Btn := Sender as TControl;
+  P := Btn.LocalToScreen(PointF(0, Btn.Height));
+  FMonitorMenu.Popup(P.X, P.Y);
+end;
+
+procedure TForm2.OnPickMonitor(Sender: TObject);
+begin
+  if not Assigned(GChaos) then
+    Exit;
+  { Tag carries the display index from the menu item. SendToDisplay moves
+    the host window onto that monitor's exact bounds (DPI-safe, position
+    first) - the render surface and touch coordinates follow on the next
+    frame. }
+  GChaos.SendToDisplay((Sender as TMenuItem).Tag);
+end;
+
 procedure TForm2.OnFormShow(Sender: TObject);
 begin
   { Every re-show (tray "Show controls", close/hide cycle) refreshes the
@@ -1410,7 +1555,7 @@ end;
 
 procedure TForm2.SyncOverlayControls;
 var
-  SizePx: Integer;
+  SizePx, StyleIdx: Integer;
 begin
   if not Assigned(GChaos) or not Assigned(FDragCheck) then
     Exit;
@@ -1426,12 +1571,33 @@ begin
   { Behavior toggles live in the Face / Animation tab but mirror the same
     three properties the preset round-trips, so a preset load updates
     them here exactly like the drag / auto-dim pair above. }
-  if Assigned(FMouseForceCheck) then
+  if Assigned(FTouchEffectsCheck) then
   begin
-    FMouseForceCheck.OnChange := nil;
-    FMouseForceCheck.IsChecked := GChaos.MouseForceField;
-    FMouseForceCheck.OnChange := OnCheckChange;
+    FTouchEffectsCheck.OnChange := nil;
+    FTouchEffectsCheck.IsChecked := GChaos.TouchEffectsEnabled;
+    FTouchEffectsCheck.OnChange := OnCheckChange;
   end;
+  { Touch effect selectors: style index and accent colour mirror the
+    (possibly preset-driven) avatar state; handlers stay disconnected
+    while assigning so the programmatic update cannot write back into
+    the properties it came from. }
+  if Assigned(FTouchEffectCombo) then
+  begin
+    StyleIdx := Ord(GChaos.TouchEffectStyle);
+    if (StyleIdx >= 0) and (StyleIdx < FTouchEffectCombo.Items.Count) then
+    begin
+      FTouchEffectCombo.OnChange := nil;
+      FTouchEffectCombo.ItemIndex := StyleIdx;
+      FTouchEffectCombo.OnChange := OnComboChange;
+    end;
+  end;
+  if Assigned(FTouchEffectColorBox) then
+  begin
+    FTouchEffectColorBox.OnChange := nil;
+    FTouchEffectColorBox.Color := GChaos.TouchEffectColor;
+    FTouchEffectColorBox.OnChange := OnTouchEffectColorChange;
+  end;
+  UpdateTouchEffectEnable;
   if Assigned(FIdleLifeCheck) then
   begin
     FIdleLifeCheck.OnChange := nil;
