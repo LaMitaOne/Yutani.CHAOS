@@ -1,6 +1,6 @@
 unit Yutani.Chaos.Skia.GPU;
 {==============================================================================*
- *  Yutani C.H.A.O.S. Skia GPU v0.42 - Holographic AI Desktop Overlay
+ *  Yutani C.H.A.O.S. Skia GPU v0.43 - Holographic AI Desktop Overlay
  *------------------------------------------------------------------------------
  *  Module : Yutani.Chaos.Skia.GPU
  *  Type   : GPU-Accelerated Holographic AI Interface & Desktop Canvas
