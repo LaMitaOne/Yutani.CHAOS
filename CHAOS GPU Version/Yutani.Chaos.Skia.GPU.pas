@@ -38,9 +38,11 @@ interface
 uses
   Winapi.Windows, System.SysUtils, System.Types, System.Classes, System.Math,
   System.Math.Vectors, System.UITypes, System.SyncObjs, System.IniFiles,
-  System.IOUtils, FMX.Types, FMX.Controls, FMX.Graphics, FMX.Forms,
-  FMX.Platform.Win, FMX.Skia, System.Skia, uSkiaCustomThreadedBase,
-  uSkiaAliveHighlighter, Yutani.MeshLoader, Yutani.PhotoTo3D;
+  System.IOUtils, System.Generics.Collections, FMX.Types, FMX.Controls,
+  FMX.Graphics, FMX.Forms, FMX.Platform.Win, FMX.Skia, System.Skia,
+  uSkiaCustomThreadedBase, uSkiaAliveHighlighter, Yutani.MeshLoader,
+  Yutani.PhotoTo3D, Yutani.AI.Client, Yutani.Audio.Pipeline,
+  Yutani.GPUInfo;
 
 const
   CHAOS_WIDTH = 236;
@@ -627,6 +629,86 @@ type
     FActiveSequence: Integer;
     FAnimTime: Double;
     FAutoMeshFile: string;
+    { ---- AI + voice pipeline state ----------------------------------------
+      The avatar talks to any OpenAI-compatible endpoint through TYutaniAIClient
+      and (optionally) runs the full microphone -> Vosk STT -> AI -> Piper TTS
+      chain through TYutaniVoicePipeline. Both objects live on the main thread;
+      the pipeline's own events marshal into it. }
+    FAIClient: TYutaniAIClient;
+    FVoicePipeline: TYutaniVoicePipeline;
+    { Two INDEPENDENT voice toggles (one master switch was too coarse):
+      TTS = ma_engine + PiperTTS only, STT = capture device + Vosk only.
+      Both off keep the pipeline away entirely - pure text chat. }
+    FVoiceTtsEnabled: Boolean;
+    FVoiceSttEnabled: Boolean;
+    { Deferred wiring: ActivatePendingVoice is called from the controls panel
+      after the user saved model paths to the INI; it sets up the pipeline and
+      wires its events. Kept public so the panel can call it explicitly. }
+    FPendingVoiceActivation: Boolean;
+    { Head-gesture spring targets: soft damped impulses on the head rotation
+      driven by the AI action tags (nod / shake / tilt / think / alert). }
+    FGestureVelX, FGestureVelY: Single;
+    FGestureOffsetX, FGestureOffsetY: Single;
+    { Human-readable voice status for the panel's live label:
+      Idle / Listening / Thinking / Speaking / Fallback: <reason>. }
+    FVoiceStatusText: string;
+    { Last model paths a pipeline was actually built with (set by
+      ActivatePendingVoice): re-activation with the SAME paths keeps the
+      running pipeline, with changed paths tears it down and rebuilds. }
+    FActiveVoskModelDir: string;
+    FActivePiperVoice: string;
+    { ---- Info / Debug live log ------------------------------------------------
+      Ring-buffered, FDebugLogLock-guarded log lines the panel's Info / Debug
+      tab shows. AppendDebugLog is called from the render thread (GPU init),
+      the audio worker threads (Vosk / piper fallbacks) and the AI client's
+      TThread.Queue handlers on the main thread, hence the lock. }
+    FDebugLogLock: TObject;
+    FDebugLog: TList<string>;
+    FDebugLogSerial: Integer;
+    { GPU detection snapshot (renderer, tier, VRAM, compute score) filled
+      once by DetectGPUCapabilities right after InitOffscreenGL - the panel's
+      Info / Debug tab shows GpuInfoText and offers GpuRecommendedParticles
+      as the particle budget. }
+    FGpuInfoText: string;
+    FGpuRecommendedParticles: Integer;
+    FGpuCaps: TGpuCapabilities;
+    { 60-FPS lip-sync: FMouthAutoTarget is what CurrentAmplitude drives the
+      mouth toward while the pipeline speaks; it eases back to the manual
+      FMouthOpen rest value when the voice goes silent. }
+    FMouthAutoTarget: Single;
+    { AI / voice wiring handlers (main thread). }
+    procedure HandleSpeechFinal(Sender: TObject; const AText: string; AIsFinal: Boolean);
+    procedure HandleSpeechPartial(Sender: TObject; const AText: string; AIsFinal: Boolean);
+    procedure HandleAIThinking(Sender: TObject);
+    procedure HandleAIActionTag(Sender: TObject; const ATag: string);
+    procedure HandleAIResponse(Sender: TObject; const ASpokenText: string);
+    { Strips every bracketed action tag ([nod] ... [alert]) from anywhere in
+      the text so the TTS never speaks them; ARemoved lists them for the log. }
+    function StripActionTags(const AText: string; out ARemoved: string): string;
+    procedure HandleAIError(Sender: TObject; const AErrorMsg: string);
+    procedure HandleVoiceTtsStart(Sender: TObject; const AMsg: string);
+    procedure HandleVoiceTtsEnd(Sender: TObject; const AMsg: string);
+    procedure HandleVoiceError(Sender: TObject; const AMsg: string);
+    procedure HandleVoiceFallback(Sender: TObject; const AMsg: string);
+    { Builds the voice pipeline with the INI-saved model paths and wires every
+      event. Missing Vosk / piper files degrade gracefully (STT off, SAPI
+      fallback) - Setup only raises on a genuinely broken microphone. }
+    procedure SetupVoicePipeline(const AVoskModelDir, APiperVoice: string);
+    { Piper sidecar resolution: tokens.txt / espeak-ng-data / lexicon.txt
+      beside the onnx, then beside its parent folder (nested voice layout). }
+    procedure ResolvePiperSidecars(const AOnnxPath, AOnnxFolder: string;
+      out ATokens, AEspeak, ALexicon: string);
+    function FindFirstOnnxInFolder(const AFolder: string): string;
+    { First .onnx directly in the folder or one subfolder level deeper. }
+    function FindFirstOnnxNested(const AFolder: string): string;
+    procedure UpdateLipSync(ADeltaTime: Double);
+    procedure UpdateGestureSprings(ADeltaTime: Double);
+    procedure ApplyHeadGesture(const ATag: string);
+    { Split toggle setters: enabling either side activates the pending
+      pipeline setup (the pipeline internally skips the capture device /
+      engine per side), disabling stops feeding that side. }
+    procedure SetVoiceTtsEnabled(const Value: Boolean);
+    procedure SetVoiceSttEnabled(const Value: Boolean);
     procedure UploadTrigUniforms(ALocY, ALocX: Integer);
     procedure SetHoloStyle(const Value: THoloStyle);
     procedure SetStepFilter(const Value: Integer);
@@ -719,7 +801,7 @@ type
     procedure RefreshScreenGeometry;
     { Send-to-monitor plumbing: RefreshDisplays re-reads the WinAPI
       monitor list into FDisplays; AddDisplay appends one entry (called
-      by the ChaosEnumMonitorProc callback through dwData = Self, which
+      by the ChaosEnumDisplaysProc callback through dwData = Self, which
       is safe because the callback only runs while RefreshDisplays is
       on the stack). }
     procedure RefreshDisplays;
@@ -830,6 +912,54 @@ type
     { Current inner-mesh part override, or $00000000 for the accent
       colour default. }
     function GetInnerPartColor(AIndex: Integer): TAlphaColor;
+    { ---- AI & voice ---------------------------------------------------------
+      On-demand AI client creation: configures BaseURL / Model / ApiKey /
+      SystemPrompt from the given values ANY time it is called - also with
+      both voice toggles off, so pure text chat works without any audio
+      stack. The values the panel passes come straight from the AI & Voice
+      tab. }
+    procedure EnsureAIClient(const ABaseURL, AModel, AApiKey, ASystemPrompt: string);
+    { Sends AText to the AI (works with or without voice). While the TTS
+      toggle is active and the pipeline exists, the response speaks through
+      the pipeline; otherwise the status returns to Idle after the
+      gestures. }
+    procedure AskAI(const AText: string);
+    { Live voice / AI state for the panel's status label (Idle / Listening /
+      Thinking / Speaking / Fallback: ...). }
+    property VoiceStatusText: string read FVoiceStatusText;
+    { ---- Info / Debug live log (panel's Info / Debug tab) ---------------
+      Thread-safe append with a [HH:NN:SS] timestamp; the panel polls
+      GetDebugLogText through its FPS timer and only re-reads when
+      DebugLogSerial changed, so scrolling / marking inside the memo works
+      undisturbed. KeepDebugLog may drop the buffer after copying. }
+    procedure AppendDebugLog(const AMsg: string);
+    function GetDebugLogText: string;
+    { Empties the ring buffer (panel's Clear Log button); the serial bump
+      tells the polling tab the next read is due. }
+    procedure ClearDebugLog;
+    { Monotonic line counter - bump on every append so the panel can detect
+      "new text arrived" without comparing the whole blob. }
+    property DebugLogSerial: Integer read FDebugLogSerial;
+    { GPU detection snapshot filled once after InitOffscreenGL (the panel's
+      GPU & SYSTEM INFO section reads it live). }
+    property GpuInfoText: string read FGpuInfoText;
+    { GPU-recommended particle budget (GpuInfoText's companion value);
+      0 while no detection ran or the benchmark failed. }
+    property GpuRecommendedParticles: Integer read FGpuRecommendedParticles;
+    { Split toggles + pipeline access for the controls panel. }
+    property VoiceTtsEnabled: Boolean read FVoiceTtsEnabled write SetVoiceTtsEnabled;
+    property VoiceSttEnabled: Boolean read FVoiceSttEnabled write SetVoiceSttEnabled;
+    property VoicePipeline: TYutaniVoicePipeline read FVoicePipeline;
+    property AIClient: TYutaniAIClient read FAIClient;
+    { Explicit pipeline activation entry point for the panel: sets the
+      pending flag and immediately tries SetupVoicePipeline with the given
+      model paths (empty strings fall back to what the INI last stored),
+      so toggling the master switch takes effect without an app restart.
+      Public because uControls drives it from the AI & Voice tab. }
+    procedure ActivatePendingVoice(const AVoskModelDir: string = ''; const APiperVoice: string = '');
+    { Makes the avatar say something through the piper/SAPI voice; no-op
+      while no pipeline exists. }
+    procedure SpeakVoice(const AText: string);
     property State: TChaosState read FState;
     property MouthState: TMouthState read FMouthState write SetMouthState;
     property EyeState: TEyeState read FEyeState write SetEyeState;
@@ -1422,6 +1552,20 @@ begin
     probe, keeping the app-always-starts guarantee. }
   FStartupPresetLoaded := False;
   FHasPendingStartupPlacement := False;
+  { AI / voice defaults: nothing audio is created until the panel activates
+    it (both toggles stay False; the pipeline is built on demand). The
+    gesture springs start at rest. }
+  FAIClient := nil;
+  FVoicePipeline := nil;
+  FVoiceTtsEnabled := False;
+  FVoiceSttEnabled := False;
+  FPendingVoiceActivation := False;
+  FVoiceStatusText := 'Idle';
+  FGestureVelX := 0;
+  FGestureVelY := 0;
+  FGestureOffsetX := 0;
+  FGestureOffsetY := 0;
+  FMouthAutoTarget := 0;
   { Eye / hover state: eyes start centred, the hover alpha multiplier starts
     fully visible, both auto-dim and highlighter mouse-follow opt in from
     the UI / presets. }
@@ -1431,6 +1575,17 @@ begin
   FAutoDimOnHover := False;
   FHighlightFollowMouse := False;
   FCustomEyePartName := '';
+  { Info / Debug live log: guard + ring buffer live for the whole lifetime,
+    so even the earliest GL-init log lines survive; GPU detection fills the
+    snapshot fields right after InitOffscreenGL (see RenderEffect). }
+  FDebugLogLock := TObject.Create;
+  FDebugLog := TList<string>.Create;
+  FDebugLogSerial := 0;
+  FGpuInfoText := '';
+  FGpuRecommendedParticles := 0;
+  FActiveVoskModelDir := '';
+  FActivePiperVoice := '';
+  AppendDebugLog('TSkChaos created - GL context + GPU detection pending');
   FDataLock := TCriticalSection.Create;
   try
     FStartupPresetLoaded := LoadLastStartupPreset;
@@ -1464,11 +1619,658 @@ end;
 
 destructor TSkChaos.Destroy;
 begin
+  { Tear the voice pipeline down before the base control dies: it owns audio
+    threads whose callbacks must never touch a half-destroyed avatar. The AI
+    client is a plain TComponent - freeing it here is enough. }
+  FreeAndNil(FVoicePipeline);
+  FreeAndNil(FAIClient);
   inherited;
   FreeAndNil(FDepthMap);
   FreeAndNil(FHighlighter);
   FreeAndNil(FDataLock);
+  FreeAndNil(FDebugLog);
+  FreeAndNil(FDebugLogLock);
 end;
+
+{==============================================================================
+  Info / Debug live log
+==============================================================================}
+procedure TSkChaos.AppendDebugLog(const AMsg: string);
+const
+  MAX_LOG_LINES = 500;
+var
+  Stamp: string;
+begin
+  { Thread-safe append with [HH:NN:SS] wall-clock stamp; called from the
+    render thread (GL init / GPU detection), the audio stack's worker
+    threads (fallbacks) and the AI client's queued handlers (main thread).
+    Ring buffer: oldest lines drop beyond MAX_LOG_LINES so a long session
+    cannot grow the list unbounded. TMonitor guards FDebugLog + serial. }
+  if (FDebugLog = nil) or (FDebugLogLock = nil) then
+    Exit;
+  Stamp := FormatDateTime('hh:nn:ss', Now);
+  TMonitor.Enter(FDebugLogLock);
+  try
+    FDebugLog.Add('[' + Stamp + '] ' + AMsg);
+    while FDebugLog.Count > MAX_LOG_LINES do
+      FDebugLog.Delete(0);
+    Inc(FDebugLogSerial);
+  finally
+    TMonitor.Exit(FDebugLogLock);
+  end;
+end;
+
+function TSkChaos.GetDebugLogText: string;
+var
+  I: Integer;
+  SB: TStringBuilder;
+begin
+  { Snapshot join of the ring buffer. The panel calls this only when
+    DebugLogSerial changed, so the cost stays rare; the builder avoids the
+    quadratic string-concat of a naive loop. }
+  Result := '';
+  if (FDebugLog = nil) or (FDebugLogLock = nil) then
+    Exit;
+  TMonitor.Enter(FDebugLogLock);
+  try
+    if FDebugLog.Count = 0 then
+      Exit;
+    SB := TStringBuilder.Create;
+    try
+      for I := 0 to FDebugLog.Count - 1 do
+      begin
+        SB.Append(FDebugLog[I]);
+        if I < FDebugLog.Count - 1 then
+          SB.Append(sLineBreak);
+      end;
+      Result := SB.ToString;
+    finally
+      SB.Free;
+    end;
+  finally
+    TMonitor.Exit(FDebugLogLock);
+  end;
+end;
+
+procedure TSkChaos.ClearDebugLog;
+begin
+  { Panel's Clear Log button: drop every line, bump the serial so the
+    Info / Debug tab's next timer tick refreshes the memo to empty. }
+  if (FDebugLog = nil) or (FDebugLogLock = nil) then
+    Exit;
+  TMonitor.Enter(FDebugLogLock);
+  try
+    FDebugLog.Clear;
+    Inc(FDebugLogSerial);
+  finally
+    TMonitor.Exit(FDebugLogLock);
+  end;
+end;
+
+{==============================================================================
+  AI client + voice pipeline integration
+==============================================================================}
+procedure TSkChaos.EnsureAIClient(const ABaseURL, AModel, AApiKey, ASystemPrompt: string);
+begin
+  { On-demand creation - independent of the voice toggles: pure text chat
+    must work while the whole audio stack is off, so the panel calls this
+    for every config save, not only when voice is on. }
+  if FAIClient = nil then
+    FAIClient := TYutaniAIClient.Create(Self);
+  if Trim(ABaseURL) <> '' then
+    FAIClient.BaseURL := ABaseURL;
+  if Trim(AModel) <> '' then
+    FAIClient.Model := AModel;
+  FAIClient.ApiKey := AApiKey;
+  if Trim(ASystemPrompt) <> '' then
+    FAIClient.SystemPrompt := ASystemPrompt;
+  { (Re)wire the events: assignments are idempotent, and a client recreated
+    after a shutdown needs them again. }
+  FAIClient.OnThinking := HandleAIThinking;
+  FAIClient.OnActionTag := HandleAIActionTag;
+  FAIClient.OnResponse := HandleAIResponse;
+  FAIClient.OnError := HandleAIError;
+end;
+
+procedure TSkChaos.AskAI(const AText: string);
+begin
+  if Trim(AText) = '' then
+    Exit;
+  { The AI is usable without any voice/audio stack: EnsureAIClient creates
+    the client on demand with the last-saved endpoint configuration. }
+  if FAIClient = nil then
+    EnsureAIClient('', '', '', '');
+  if FAIClient = nil then
+    Exit;
+  FVoiceStatusText := 'Thinking';
+  AppendDebugLog('AI request: "' + Copy(Trim(AText), 1, 120) + '" (model: ' + FAIClient.Model + ')');
+  FAIClient.AskAsync(AText);
+  NotifyActivity;
+end;
+
+procedure TSkChaos.SpeakVoice(const AText: string);
+begin
+  { Every direct TTS trigger (panel Test-TTS button, tray menu) lands in the
+    debug log - the pipeline's own TtsStart events only report playback, not
+    WHO asked for it. }
+  if Trim(AText) = '' then
+    Exit;
+  AppendDebugLog('SpeakVoice: "' + Copy(Trim(AText), 1, 80) + '"');
+  if FVoicePipeline <> nil then
+    FVoicePipeline.Say(AText);
+end;
+
+procedure TSkChaos.ActivatePendingVoice(const AVoskModelDir: string = ''; const APiperVoice: string = '');
+var
+  AVoskModelDirBefore, APiperVoiceBefore: string;
+begin
+  { Public entry point for the controls panel: mark the intent and try the
+    setup right away with the given model paths (empty strings leave STT off
+    and TTS on the SAPI fallback - text chat keeps working either way).
+    Re-activation with CHANGED paths rebuilds the pipeline cleanly: the old
+    pipeline keeps a loaded Vosk model / piper voice that Setup refuses to
+    swap (Setup called twice raises), so a fresh instance is the only way a
+    new model pick takes effect without an app restart. Same paths (panel
+    re-sync at startup) keep the running pipeline untouched. }
+  FPendingVoiceActivation := True;
+  if FVoicePipeline <> nil then
+  begin
+    if SameText(FActiveVoskModelDir, AVoskModelDir) and SameText(FActivePiperVoice, APiperVoice) then
+      Exit;
+    AVoskModelDirBefore := FActiveVoskModelDir;
+    APiperVoiceBefore := FActivePiperVoice;
+    AppendDebugLog(Format('Voice pipeline re-activation: vosk "%s" -> "%s", piper "%s" -> "%s" (rebuilding)',
+      [AVoskModelDirBefore, AVoskModelDir, APiperVoiceBefore, APiperVoice]));
+    try
+      FreeAndNil(FVoicePipeline);
+    except
+      on E: Exception do
+        AppendDebugLog('Old pipeline teardown raised: ' + E.Message);
+    end;
+  end;
+  FActiveVoskModelDir := AVoskModelDir;
+  FActivePiperVoice := APiperVoice;
+  if FVoiceTtsEnabled or FVoiceSttEnabled then
+    SetupVoicePipeline(AVoskModelDir, APiperVoice);
+end;
+
+procedure TSkChaos.SetupVoicePipeline(const AVoskModelDir, APiperVoice: string);
+var
+  PiperModel, PiperTokens, PiperEspeak, PiperLexicon: string;
+begin
+  { Never raise out of here on missing models: a broken microphone or
+    MiniAudio failure raises from Setup and is caught below, but absent
+    STT / TTS files only degrade (text chat and SAPI keep working). }
+  if FVoicePipeline <> nil then
+    Exit;
+  { Resolve the piper voice: APiperVoice may be the .onnx file itself or a
+    voice folder (tokens.txt / espeak-ng-data sit beside the onnx - possibly
+    one or more levels below, sherpa\vits-piper-en_US-lessac-medium\...).
+    Empty strings keep TTS on the SAPI fallback. }
+  PiperModel := APiperVoice;
+  PiperTokens := '';
+  PiperEspeak := '';
+  PiperLexicon := '';
+  if (PiperModel <> '') and FileExists(PiperModel) then
+  begin
+    { File form: resolve tokens.txt / espeak-ng-data / lexicon.txt in the
+      onnx folder first, then in its parent (a single nested level covers
+      the sherpa root layout where tokens sit beside the voice subfolder). }
+    ResolvePiperSidecars(PiperModel, ExtractFilePath(PiperModel), PiperTokens, PiperEspeak, PiperLexicon);
+  end
+  else if (PiperModel <> '') and DirectoryExists(PiperModel) then
+  begin
+    { Folder form: find the first .onnx inside - directly or nested one
+      level deeper (sherpa\vits-piper-...\voice.onnx); tokens / espeak /
+      lexicon are searched beside the found onnx and up to its parent. }
+    PiperModel := FindFirstOnnxNested(APiperVoice);
+    if PiperModel <> '' then
+      ResolvePiperSidecars(PiperModel, ExtractFilePath(PiperModel), PiperTokens, PiperEspeak, PiperLexicon)
+    else
+    begin
+      { No onnx in the folder tree: leave TTS to the SAPI fallback. }
+      PiperTokens := '';
+      PiperEspeak := '';
+      PiperLexicon := '';
+    end;
+  end;
+  if AVoskModelDir <> '' then
+    AppendDebugLog(Format('Voice pipeline setup: vosk model dir "%s"', [AVoskModelDir]))
+  else
+    AppendDebugLog('Voice pipeline setup: no Vosk model dir (STT off)');
+  if PiperModel <> '' then
+    AppendDebugLog(Format('Voice pipeline setup: piper voice "%s" (tokens: %d, espeak-ng-data: %d, lexicon: %d)',
+      [PiperModel, Ord(PiperTokens <> ''), Ord(PiperEspeak <> ''), Ord(PiperLexicon <> '')]))
+  else if APiperVoice <> '' then
+    AppendDebugLog(Format('Voice pipeline setup: no .onnx found under "%s" - SAPI fallback', [APiperVoice]))
+  else
+    AppendDebugLog('Voice pipeline setup: no piper voice selected - SAPI fallback');
+  try
+    FVoicePipeline := TYutaniVoicePipeline.Create;
+    FVoicePipeline.AutoReply := False;
+    FVoicePipeline.OnHeard := HandleSpeechFinal;
+    FVoicePipeline.OnTtsStart := HandleVoiceTtsStart;
+    FVoicePipeline.OnTtsEnd := HandleVoiceTtsEnd;
+    FVoicePipeline.OnError := HandleVoiceError;
+    FVoicePipeline.OnFallback := HandleVoiceFallback;
+    { The split toggles flow straight through: TTS-only builds engine + TTS
+      (no capture device, no libvosk), STT-only builds capture + Vosk and
+      answers arrive as text + gestures. }
+    FVoicePipeline.Setup(AVoskModelDir, PiperModel, PiperTokens, PiperEspeak,
+      FVoiceTtsEnabled, FVoiceSttEnabled);
+    { Setup survived: report which engine combination went live (Vosk status
+      comes from the pipeline's own events - the OnFallback handler logs a
+      missing model / DLL - so here the success side is all we know). }
+    if FVoicePipeline <> nil then
+    begin
+      if FVoiceSttEnabled and (AVoskModelDir <> '') then
+        AppendDebugLog('Vosk STT active: ' + AVoskModelDir)
+      else if FVoiceSttEnabled then
+        AppendDebugLog('Vosk STT off (no model dir)')
+      else
+        AppendDebugLog('STT disabled by toggle');
+      if FVoiceTtsEnabled then
+      begin
+        if PiperModel <> '' then
+          AppendDebugLog('Piper TTS active: ' + PiperModel)
+        else
+          AppendDebugLog('Piper TTS on SAPI fallback (no model)');
+      end
+      else
+        AppendDebugLog('TTS disabled by toggle (answers as text + gestures)');
+    end;
+  except
+    { A hard audio failure (no microphone / MiniAudio broken) must not take
+      the avatar down: drop the pipeline and report why through the status. }
+    on E: Exception do
+    begin
+      FreeAndNil(FVoicePipeline);
+      FVoiceStatusText := 'Fallback: ' + E.Message;
+      AppendDebugLog('Voice pipeline setup FAILED: ' + E.Message);
+    end;
+  end;
+end;
+
+procedure TSkChaos.ResolvePiperSidecars(const AOnnxPath, AOnnxFolder: string;
+  out ATokens, AEspeak, ALexicon: string);
+var
+  Base, Cand: string;
+
+  { tokens.txt / espeak-ng-data / lexicon.txt in Base, else ''. }
+  procedure CheckBase;
+  begin
+    Cand := TPath.Combine(Base, 'tokens.txt');
+    if FileExists(Cand) then
+      ATokens := Cand;
+    Cand := TPath.Combine(Base, 'espeak-ng-data');
+    if DirectoryExists(Cand) then
+      AEspeak := Cand;
+    Cand := TPath.Combine(Base, 'lexicon.txt');
+    if FileExists(Cand) then
+      ALexicon := Cand;
+  end;
+
+var
+  Parent: string;
+begin
+  { Sidecar search: the folder that HOLDS the .onnx first, then its parent -
+    piper voices unpacked into a subfolder (vits-piper-en_US-lessac-medium\)
+    keep tokens.txt / espeak-ng-data either beside the onnx, beside the
+    voice folder, or both. Whichever copy exists wins; lexicon.txt is an
+    accepted alternative to espeak-ng-data (sherpa-onnx accepts either). }
+  ATokens := '';
+  AEspeak := '';
+  ALexicon := '';
+  Base := AOnnxFolder;
+  if Base <> '' then
+    CheckBase;
+  Parent := ExtractFilePath(ExcludeTrailingPathDelimiter(Base));
+  if Parent <> '' then
+  begin
+    { Second pass over the parent only fills values the onnx folder did not
+      provide, so the nearest copy always wins. }
+    Base := Parent;
+    if (ATokens = '') or (AEspeak = '') or (ALexicon = '') then
+      CheckBase;
+  end;
+end;
+
+function TSkChaos.FindFirstOnnxNested(const AFolder: string): string;
+var
+  SR: TSearchRec;
+  Sub: string;
+begin
+  { First .onnx DIRECTLY inside AFolder, else the first .onnx one level
+    deeper in any subfolder (sherpa\vits-piper-...\voice.onnx layout).
+    ('' when neither exists.) }
+  Result := FindFirstOnnxInFolder(AFolder);
+  if Result <> '' then
+    Exit;
+  if (AFolder = '') or (not DirectoryExists(AFolder)) then
+    Exit;
+  if FindFirst(IncludeTrailingPathDelimiter(AFolder) + '*', faDirectory, SR) = 0 then
+  try
+    repeat
+      if (SR.Name <> '.') and (SR.Name <> '..') then
+      begin
+        Sub := IncludeTrailingPathDelimiter(AFolder) + SR.Name;
+        Result := FindFirstOnnxInFolder(Sub);
+        if Result <> '' then
+          Exit;
+      end;
+    until FindNext(SR) <> 0;
+  finally
+    FindClose(SR);
+  end;
+end;
+
+function TSkChaos.FindFirstOnnxInFolder(const AFolder: string): string;
+var
+  SR: TSearchRec;
+begin
+  { First .onnx file directly inside AFolder ('' when none exists). }
+  Result := '';
+  if (AFolder = '') or (not DirectoryExists(AFolder)) then
+    Exit;
+  if FindFirst(IncludeTrailingPathDelimiter(AFolder) + '*.onnx', faAnyFile, SR) = 0 then
+  try
+    Result := IncludeTrailingPathDelimiter(AFolder) + SR.Name;
+  finally
+    FindClose(SR);
+  end;
+end;
+
+procedure TSkChaos.SetVoiceTtsEnabled(const Value: Boolean);
+begin
+  if FVoiceTtsEnabled = Value then
+    Exit;
+  FVoiceTtsEnabled := Value;
+  { Enabling from the panel: the pipeline is built ONLY from
+    ActivatePendingVoice, which hands the REAL model paths over (INI-saved
+    or freshly picked). Building an empty ('', '') pipeline here would lock
+    TTS onto SAPI before the panel could supply the actual models. The
+    pending flag keeps the intent so the panel's ActivatePendingVoice call
+    right after the toggle loads exactly the selected piper voice. }
+  if FVoiceTtsEnabled then
+  begin
+    FPendingVoiceActivation := True;
+    if FVoiceSttEnabled or (FVoicePipeline <> nil) then
+      FVoiceStatusText := 'Listening'
+    else
+      FVoiceStatusText := 'Voice ready';
+  end
+  else
+    FVoiceStatusText := 'Idle';
+  NotifyActivity;
+end;
+
+procedure TSkChaos.SetVoiceSttEnabled(const Value: Boolean);
+begin
+  if FVoiceSttEnabled = Value then
+    Exit;
+  FVoiceSttEnabled := Value;
+  { Same deferred wiring as the TTS side: ActivatePendingVoice supplies the
+    real Vosk model dir right after the toggle; disabling alone keeps a
+    running pipeline (text chat + TTS stay usable) - HandleSpeechFinal is
+    additionally gated by FVoiceSttEnabled. }
+  if FVoiceSttEnabled then
+  begin
+    FPendingVoiceActivation := True;
+    FVoiceStatusText := 'Listening';
+  end
+  else
+  begin
+    if FVoiceTtsEnabled then
+      FVoiceStatusText := 'Voice ready'
+    else
+      FVoiceStatusText := 'Idle';
+  end;
+  NotifyActivity;
+end;
+
+procedure TSkChaos.HandleSpeechPartial(Sender: TObject; const AText: string; AIsFinal: Boolean);
+begin
+  { Live partial transcription - nothing to drive yet. }
+end;
+
+procedure TSkChaos.HandleSpeechFinal(Sender: TObject; const AText: string; AIsFinal: Boolean);
+begin
+  { Fired from the recognizer's worker thread (marshalled through the audio
+    stack); the pipeline already gates MicLipSyncOnly, so recognized text
+    reaching here means the user actually talked TO the avatar. }
+  if (not AIsFinal) or (Trim(AText) = '') then
+    Exit;
+  if (FVoicePipeline <> nil) and FVoicePipeline.MicLipSyncOnly then
+    Exit;
+  { STT toggle off: the recognizer may still run (pipeline alive for TTS),
+    but recognized text must not reach the AI. }
+  if not FVoiceSttEnabled then
+    Exit;
+  AppendDebugLog('Vosk recognized: "' + Copy(Trim(AText), 1, 120) + '"');
+  FVoiceStatusText := 'Thinking';
+  AskAI(AText);
+end;
+
+procedure TSkChaos.HandleAIThinking(Sender: TObject);
+begin
+  { Slight thinking tilt while the request runs. }
+  EmotionMode := emThinking;
+  FGestureVelY := FGestureVelY - 0.55;
+  FVoiceStatusText := 'Thinking';
+  AppendDebugLog('AI request sent - waiting for response');
+end;
+
+procedure TSkChaos.HandleAIActionTag(Sender: TObject; const ATag: string);
+begin
+  AppendDebugLog('AI action tag: ' + ATag);
+  ApplyHeadGesture(ATag);
+end;
+
+procedure TSkChaos.HandleAIResponse(Sender: TObject; const ASpokenText: string);
+var
+  Cleaned, RemovedTags: string;
+begin
+  { Response arrived: strip every action-tag token ([nod], [shake], [tilt],
+    [think], [alert], [neutral]) from the text - the model occasionally
+    embeds them mid-sentence or at the end despite the prompt - so the TTS
+    never reads bracket noise aloud. The tags are pure gesture markers: the
+    AI client already fired them as action events (head gesture still runs),
+    here they only would pollute the spoken text. }
+  Cleaned := StripActionTags(ASpokenText, RemovedTags);
+  if RemovedTags <> '' then
+    AppendDebugLog('AI action tags filtered from response: ' + RemovedTags);
+  { The answer ALWAYS lands in the status text, whether it is spoken or
+    not - with the voice stack live the user can read along while the TTS
+    talks (the label would otherwise sit at "Speaking" and hide the actual
+    words); in text-only mode it is the only channel at all. }
+  if Trim(Cleaned) <> '' then
+    FVoiceStatusText := 'AI: ' + Trim(Cleaned);
+  { Speak the cleaned text when the TTS side is live (the pipeline's
+    anti-echo mutes the recognizer while it talks; STT-only setups stay
+    text+gesture on purpose - no voice to play). }
+  if FVoiceTtsEnabled and (FVoicePipeline <> nil) and (Trim(Cleaned) <> '') then
+  begin
+    FVoicePipeline.Say(Cleaned);
+    AppendDebugLog('AI response (' + IntToStr(Length(Cleaned)) + ' chars) -> speaking');
+  end
+  else if Trim(Cleaned) <> '' then
+    AppendDebugLog('AI response (text-only): ' + Copy(Cleaned, 1, 160))
+  else
+    FVoiceStatusText := 'Idle';
+  NotifyActivity;
+end;
+
+function TSkChaos.StripActionTags(const AText: string; out ARemoved: string): string;
+var
+  I, Start: Integer;
+  TagLower: string;
+const
+  TAG_NAMES: array[0..5] of string = ('neutral', 'nod', 'shake', 'tilt', 'think', 'alert');
+begin
+  { Remove EVERY bracketed action-tag token from anywhere in the text
+    (start / middle / end), collapsing the leftover double spaces. ARemoved
+    collects the tags for the debug log. Non-tag brackets ([quote], [1])
+    stay untouched - only the six known gesture tags are TTS noise. }
+  Result := AText;
+  ARemoved := '';
+  Start := 0;
+  { WHILE loop instead of for-to: the body writes I := Start - 1 after a
+    Delete so the scan restarts at the same spot and overlapping tags are
+    caught - a for-loop variable cannot be assigned (compiler E2081). }
+  I := 1;
+  while I <= Length(Result) do
+  begin
+    if Result[I] = '[' then
+      Start := I
+    else if (Result[I] = ']') and (Start > 0) then
+    begin
+      if (I - Start) > 1 then
+      begin
+        TagLower := LowerCase(Copy(Result, Start + 1, I - Start - 1));
+        if (TagLower = 'neutral') or (TagLower = 'nod') or (TagLower = 'shake')
+          or (TagLower = 'tilt') or (TagLower = 'think') or (TagLower = 'alert') then
+        begin
+          if ARemoved <> '' then
+            ARemoved := ARemoved + ', ';
+          ARemoved := ARemoved + TagLower;
+          Delete(Result, Start, I - Start + 1);
+          { Deleting shifts everything left: restart the scan from the same
+            position so overlapping tags ('] [nod] [nod]') are caught too. }
+          I := Start - 1;
+        end;
+      end;
+      Start := 0;
+    end;
+    Inc(I);
+  end;
+  Result := Trim(Result);
+  while Pos('  ', Result) > 0 do
+    Delete(Result, Pos('  ', Result), 1);
+end;
+
+procedure TSkChaos.HandleAIError(Sender: TObject; const AErrorMsg: string);
+begin
+  { The exact failure reason stays visible on the panel's status label. }
+  FVoiceStatusText := 'Fallback: ' + AErrorMsg;
+  AppendDebugLog('AI request error: ' + AErrorMsg);
+end;
+
+procedure TSkChaos.HandleVoiceTtsStart(Sender: TObject; const AMsg: string);
+begin
+  { Debug-log EVERY TTS start: a failure in AttachEngine or SpeakViaSherpa
+    otherwise stays invisible (the "logged speaking but nothing audible"
+    case - now the log shows whether playback really began). }
+  AppendDebugLog('TTS started');
+  FVoiceStatusText := 'Speaking';
+  NotifyActivity;
+end;
+
+procedure TSkChaos.HandleVoiceTtsEnd(Sender: TObject; const AMsg: string);
+begin
+  AppendDebugLog('TTS finished');
+  FVoiceStatusText := 'Idle';
+  NotifyActivity;
+end;
+
+procedure TSkChaos.HandleVoiceError(Sender: TObject; const AMsg: string);
+begin
+  { EVERY TTS error goes to the debug log too (AttachEngine /
+    ma_sound_start failures live here) - the status label alone rotates
+    away, the log keeps the reason for diagnosis. }
+  AppendDebugLog('TTS error: ' + AMsg);
+  FVoiceStatusText := 'Fallback: ' + AMsg;
+  NotifyActivity;
+end;
+
+procedure TSkChaos.HandleVoiceFallback(Sender: TObject; const AMsg: string);
+begin
+  FVoiceStatusText := 'Fallback: ' + AMsg;
+  AppendDebugLog('Voice fallback: ' + AMsg);
+end;
+
+procedure TSkChaos.ApplyHeadGesture(const ATag: string);
+var
+  LowTag: string;
+begin
+  { Soft damped spring impulses on the head rotation around the neck pivot
+    (FGestureOffset* chase 0, the velocities carry the impulse). Amplitudes
+    stay small so the look-at tracking keeps dominating. }
+  LowTag := LowerCase(ATag);
+  if LowTag = 'nod' then
+  begin
+    FGestureVelY := FGestureVelY - 1.1;
+    EmotionMode := emNeutral;
+  end
+  else if LowTag = 'shake' then
+  begin
+    FGestureVelX := FGestureVelX - 1.35;
+    EmotionMode := emNeutral;
+  end
+  else if LowTag = 'tilt' then
+  begin
+    FGestureVelX := FGestureVelX + 0.7;
+    EmotionMode := emNeutral;
+  end
+  else if LowTag = 'think' then
+  begin
+    FGestureVelX := FGestureVelX + 0.45;
+    FGestureVelY := FGestureVelY - 0.3;
+    EmotionMode := emThinking;
+  end
+  else if LowTag = 'alert' then
+  begin
+    FGestureVelY := FGestureVelY - 0.9;
+    EmotionMode := emAlert;
+  end;
+  NotifyActivity;
+end;
+
+procedure TSkChaos.UpdateGestureSprings(ADeltaTime: Double);
+begin
+  { Critically-damped springs: velocity integrates the impulse, offset
+    follows the velocity, both decay back to rest so the head settles. }
+  FGestureVelX := FGestureVelX - FGestureOffsetX * 26.0 * ADeltaTime - FGestureVelX * 7.5 * ADeltaTime;
+  FGestureVelY := FGestureVelY - FGestureOffsetY * 26.0 * ADeltaTime - FGestureVelY * 7.5 * ADeltaTime;
+  FGestureOffsetX := FGestureOffsetX + FGestureVelX * ADeltaTime;
+  FGestureOffsetY := FGestureOffsetY + FGestureVelY * ADeltaTime;
+  FGestureOffsetX := EnsureRange(FGestureOffsetX, -0.6, 0.6);
+  FGestureOffsetY := EnsureRange(FGestureOffsetY, -0.6, 0.6);
+end;
+
+procedure TSkChaos.UpdateLipSync(ADeltaTime: Double);
+var
+  Target: Single;
+begin
+  { 60-FPS mouth driver: while the TTS speaks (or MicLipSyncOnly mirrors the
+    creator's live microphone), CurrentAmplitude is the smoothed RMS envelope
+    and becomes the mouth target; when the voice goes silent the mouth fades
+    back to 0.0 first and the manual MouthOpen track then takes over again. }
+  if (FVoicePipeline <> nil) and (FVoicePipeline.IsSpeaking or FVoicePipeline.MicLipSyncOnly) then
+    Target := EnsureRange(FVoicePipeline.CurrentAmplitude, 0.0, 1.0)
+  else
+    Target := -1;  // flag: no live amplitude, fade out and hand back control
+  if Target >= 0 then
+    FMouthAutoTarget := FMouthAutoTarget + (Target - FMouthAutoTarget) * EnsureRange(14.0 * ADeltaTime, 0, 1)
+  else
+  begin
+    { Silent: decay the auto target to 0 and follow it down, so the mouth
+      closes softly instead of freezing at the last spoken value. }
+    FMouthAutoTarget := FMouthAutoTarget * (1.0 - EnsureRange(5.0 * ADeltaTime, 0, 1));
+    if FMouthAutoTarget <= 0.015 then
+    begin
+      { Handover complete: the auto driver releases FMouthOpen so the manual
+        trackbar owns the mouth again. }
+      FMouthAutoTarget := 0.0;
+      if FMouthOpen < 0.015 then
+        FMouthOpen := 0.0;
+    end
+    else
+      FMouthOpen := FMouthAutoTarget;
+  end;
+  if Target >= 0 then
+    FMouthOpen := EnsureRange(FMouthAutoTarget, 0.0, 1.0);
+end;
+
 
 procedure TSkChaos.LoadDepthMap(const AFileName: string);
 begin
@@ -1575,6 +2377,26 @@ begin
   InitShaders;
   InitGLResources;
   FGLReady := True;
+  { GPU detection + 15 ms compute benchmark HERE, while the fresh 4.3
+    context is current on this thread (the benchmark dispatches a real
+    compute shader, so glGetString / dispatches must run inside the window
+    between wglMakeCurrent and the next frame). Any failure leaves the
+    snapshot empty - the Info tab then shows the detection as unavailable
+    instead of crashing the first frame. }
+  try
+    FGpuCaps := DetectGPUCapabilities(True);
+    FGpuInfoText := FormatGpuInfoText(FGpuCaps);
+    FGpuRecommendedParticles := FGpuCaps.RecommendedParticles;
+    AppendDebugLog(Format('GPU detected: %s (tier %s, compute score %.2f ms)',
+      [FGpuCaps.Renderer, TGpuTierNames[FGpuCaps.Tier], FGpuCaps.ComputeScoreMS]));
+  except
+    on E: Exception do
+    begin
+      FGpuInfoText := 'GPU detection failed: ' + E.Message;
+      FGpuRecommendedParticles := 0;
+      AppendDebugLog('GPU detection FAILED: ' + E.Message);
+    end;
+  end;
   Result := True;
 end;
 
@@ -2443,6 +3265,19 @@ begin
     purely the dim-blink flag. }
   FLookX := FLookX + ((FLookTargetX + IdleHeadX + FSaccadeSmoothX * (0.35 + 0.65 * FIdleBlend)) - FLookX) * EnsureRange(4.5 * DeltaTime, 0, 1);
   FLookY := FLookY + ((FLookTargetY + IdleHeadY + FSaccadeSmoothY * (0.35 + 0.65 * FIdleBlend)) - FLookY) * EnsureRange(4.5 * DeltaTime, 0, 1);
+
+  { AI head gestures: the gesture springs (impulsed by the AI action tags)
+    ride on top of the look model as an additive offset - they never fight
+    the tracking because they decay to zero within a second. }
+  UpdateGestureSprings(DeltaTime);
+  FLookX := EnsureRange(FLookX + FGestureOffsetX * 0.5, -2.5, 2.5);
+  FLookY := EnsureRange(FLookY + FGestureOffsetY * 0.5, -2.0, 2.0);
+
+  { 60-FPS lip-sync: while the voice pipeline speaks (or mirrors the live
+    microphone in LipSyncOnly mode) the mouth follows the amplitude envelope;
+    when silent it eases back to the manual MouthOpen rest value. }
+  if FVoicePipeline <> nil then
+    UpdateLipSync(DeltaTime);
 
   { Send-to-monitor jump: the host window was moved by SendToDisplay on
     the UI thread. Park the touch state outside and zero the velocity
@@ -3994,9 +4829,11 @@ end;
 { EnumDisplayMonitors callback: appends every attached monitor to
   FDisplays via dwData = Self. The WinAPI contract guarantees the
   callback only runs while EnumDisplayMonitors itself is on the stack,
-  so borrowing Self without locking is safe. }
-function ChaosEnumMonitorProc(hMonitor: THandle; hdcMonitor: HDC;
-  lprcMonitor: PRect; dwData: NativeInt): LongBool; stdcall;
+  so borrowing Self without locking is safe. BOOL/stdcall signature with
+  PRect (NOT LPRECT - that type name is not FMX-safe in older Delphi
+  versions) matches the WinAPI MONITORENUMPROC contract exactly. }
+function ChaosEnumDisplaysProc(hMonitor: THandle; hdcMonitor: HDC;
+  lprcMonitor: PRect; dwData: NativeInt): BOOL; stdcall;
 var
   Info: TMonitorInfoEx;
 begin
@@ -4015,7 +4852,7 @@ begin
     standalone callback matches TMonitorEnumProc exactly, so it passes
     straight into the parameter - no procedural temp variable needed. }
   FDisplays := nil;
-  EnumDisplayMonitors(0, nil, ChaosEnumMonitorProc, NativeInt(Self));
+  EnumDisplayMonitors(0, nil, @ChaosEnumDisplaysProc, LPARAM(Self));
 end;
 
 function TSkChaos.DisplayCount: Integer;
@@ -4570,6 +5407,14 @@ begin
     Ini.WriteInteger('Performance', 'IdleTargetFPS', IdleTargetFPS);
     Ini.WriteFloat('Performance', 'IdleTimeoutSec', IdleTimeoutSec);
 
+    { AI & voice state (the panel persists its own detailed AI section;
+      this keeps the split toggles + lip-sync mode alive per preset). }
+    Ini.WriteBool('AI', 'TtsEnabled', FVoiceTtsEnabled);
+    Ini.WriteBool('AI', 'SttEnabled', FVoiceSttEnabled);
+    { Legacy key kept for older builds: master on = both sides on. }
+    Ini.WriteBool('AI', 'VoiceEnabled', FVoiceTtsEnabled or FVoiceSttEnabled);
+    Ini.WriteBool('AI', 'MicLipSyncOnly', (FVoicePipeline <> nil) and FVoicePipeline.MicLipSyncOnly);
+
     { One scan over the live point set: a part is visible iff the loader
       kept at least one of its points, which holds for both the automatic
       and the manual include modes without guessing at keywords. }
@@ -4721,6 +5566,15 @@ begin
       ActiveTargetFPS := Ini.ReadInteger('Performance', 'ActiveTargetFPS', ActiveTargetFPS);
       IdleTargetFPS := Ini.ReadInteger('Performance', 'IdleTargetFPS', IdleTargetFPS);
       IdleTimeoutSec := Ini.ReadFloat('Performance', 'IdleTimeoutSec', IdleTimeoutSec);
+
+      { AI & voice: restore the split toggles (legacy presets carrying only
+        the coupled VoiceEnabled master map to both sides); the panel applies
+        the detailed paths (models / endpoint / prompt) through its own AI
+        section and re-activates the pipeline via ActivatePendingVoice. }
+      FVoiceTtsEnabled := Ini.ReadBool('AI', 'TtsEnabled',
+        Ini.ReadBool('AI', 'VoiceEnabled', False));
+      FVoiceSttEnabled := Ini.ReadBool('AI', 'SttEnabled',
+        Ini.ReadBool('AI', 'VoiceEnabled', False));
 
       if Parent is TControl then
         ClampIntoParent(X, Y)

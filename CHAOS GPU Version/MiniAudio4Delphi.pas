@@ -67,7 +67,7 @@ function ma_sound_sizeof(): NativeUInt; cdecl;
 
 function ma_sound_group_sizeof(): NativeUInt; cdecl;
 
-function ma_device_sizeof(): NativeUInt; cdecl;
+//function ma_device_sizeof(): NativeUInt; cdecl;
 
 function ma_context_sizeof(): NativeUInt; cdecl;
 
@@ -374,7 +374,7 @@ function ma_sound_sizeof; cdecl; external MINIAUDIO_LIB;
 
 function ma_sound_group_sizeof; cdecl; external MINIAUDIO_LIB;
 
-function ma_device_sizeof; cdecl; external MINIAUDIO_LIB;
+//function ma_device_sizeof; cdecl; external MINIAUDIO_LIB;
 
 function ma_context_sizeof; cdecl; external MINIAUDIO_LIB;
 

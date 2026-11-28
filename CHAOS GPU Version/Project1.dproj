@@ -124,6 +124,9 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Win64)'!=''">
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
+        <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
+        <VerInfo_Locale>1033</VerInfo_Locale>
+        <Icon_MainIcon>yutani.ico</Icon_MainIcon>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">
@@ -142,7 +145,7 @@
         <DCCReference Include="Yutani.MeshLoader.pas"/>
         <DCCReference Include="uSkiaCustomThreadedBase.pas"/>
         <DCCReference Include="Yutani.PhotoTo3D.pas"/>
-        <DCCReference Include="Yutani.Audio.Demo.pas"/>
+        <DCCReference Include="Yutani.Audio.Pipeline.pas"/>
         <DCCReference Include="Yutani.Audio.PiperTTS.pas"/>
         <DCCReference Include="Yutani.Audio.Vosk.pas"/>
         <DCCReference Include="Yutani.AI.Client.pas"/>

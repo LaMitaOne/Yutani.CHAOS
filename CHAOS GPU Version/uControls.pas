@@ -34,9 +34,12 @@ interface
 
 uses
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
-  System.Math, System.Generics.Collections, FMX.Types, FMX.Controls, FMX.Forms,
+  System.IniFiles, System.IOUtils,
+  System.Math, System.Generics.Collections, Winapi.Windows, Winapi.ShellAPI,
+  FMX.Types, FMX.Controls, FMX.Forms,
   FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.ListBox, FMX.Colors, FMX.Layouts,
-  FMX.TabControl, FMX.Menus, Yutani.Chaos.Skia.GPU, Yutani.MeshLoader;
+  FMX.TabControl, FMX.Menus, FMX.Edit, FMX.Memo, FMX.Platform, FMX.Clipboard,
+  Yutani.Chaos.Skia.GPU, Yutani.MeshLoader;
 
 type
   TForm2 = class(TForm)
@@ -120,6 +123,9 @@ type
     FTbActiveFPS: TTrackBar;
     FTbIdleFPS: TTrackBar;
     FTbIdleTimeout: TTrackBar;
+    { Particle budget slider (System tab) - kept as a field so the Info /
+      Debug tab's Apply Recommended Particle Budget button can mirror it. }
+    FTbParticleBudget: TTrackBar;
     FTbNeckPivot: TTrackBar;
     FAdaptiveCheck: TCheckBox;
     { FAutomaticParts tracks the "Automatic" checkbox state: when True the
@@ -127,6 +133,113 @@ type
       False the per-part checkbox grid below wins and the auto-exclude list
       is bypassed so the user can re-include hair/teeth/etc. by ticking them. }
     FAutomaticParts: Boolean;
+    { ---- AI & Voice tab --------------------------------------------------
+      Model combos auto-scan vosk\* / sherpa\* folders next to the EXE and
+      accept manual folder picks through Browse... (SelectDirectory), so any
+      language / path works. The endpoint edits + system prompt round-trip
+      through the INI; the live-test row talks straight to the avatar's
+      AI client / voice pipeline. }
+    { Two INDEPENDENT voice toggles (one master switch was too coarse):
+      TTS = speech output (Piper/SAPI + lip-sync), STT = microphone +
+      Vosk recognition. Both off = pure text chat. }
+    FTtsEnableCheck: TCheckBox;
+    FSttEnableCheck: TCheckBox;
+    FMicLipSyncCheck: TCheckBox;
+    FVoskCombo: TComboBox;
+    FVoskBrowseBtn: TButton;
+    { Download buttons next to Reload models: open the official model pages
+      in the browser (ShellExecute). }
+    FDownloadVoskBtn: TButton;
+    FDownloadPiperBtn: TButton;
+    FPiperCombo: TComboBox;
+    FPiperBrowseBtn: TButton;
+    FBaseUrlEdit: TEdit;
+    FModelEdit: TEdit;
+    FApiKeyEdit: TEdit;
+    { System prompt as multi-line TMemo: the prompt is a whole paragraph,
+      TEdit would force it into one scroll-less line. }
+    FSystemPromptEdit: TMemo;
+    FAskEdit: TEdit;
+    FSendBtn: TButton;
+    FTestTtsBtn: TButton;
+    FVoiceStatusLbl: TLabel;
+    { ---- Info / Debug tab -------------------------------------------------
+      Top: GPU & SYSTEM INFO block (live snapshot from the avatar's GL init
+      detection) + Apply Recommended Particle Budget. Bottom: the
+      thread-safe DEBUG LOG ring buffer mirror in a read-only memo. }
+    FGpuInfoLbl: TLabel;
+    FApplyGpuBudgetBtn: TButton;
+    FDebugMemo: TMemo;
+    FCopyLogBtn: TButton;
+    FClearLogBtn: TButton;
+    { Debug-log mirror state: last serial the memo text was built from, so
+      OnFpsTimer only rebuilds the memo when NEW lines actually arrived -
+      scrolling / marking inside the memo stays undisturbed otherwise. }
+    FLastLogSerial: Integer;
+    { AI & voice settings file: <ExeDir>\ai.ini, separate from the per-mesh
+      presets so it survives mesh switches. }
+    { Parallel path arrays behind the model combos: the combos show SHORT
+      names (ExtractFileName) so long paths cannot blow up the layout,
+      while the full paths - what the pipeline and the INI need - live in
+      these arrays at the same index as the combo entry. }
+    FVoskPaths: TStringList;
+    FPiperPaths: TStringList;
+    { TRUE while LoadAiSettings pushes INI values into the controls: their
+      OnChange / OnTyping handlers (OnTtsEnableToggle etc.) would otherwise
+      fire DURING the load and call SaveAiSettings with the still-empty /
+      default control state, instantly overwriting ai.ini with defaults. }
+    FLoadingAiSettings: Boolean;
+    { Adds a full model path to a combo + its parallel array (displaying the
+      short name), selecting it; returns True when the entry was new. }
+    function SelectModelEntry(ACombo: TComboBox; APaths: TStringList;
+      const AFullPath: string): Boolean;
+    { Model path for the combo's current selection ('' when none). }
+    function PathForComboIndex(ACombo: TComboBox; APaths: TStringList): string;
+    function GetAiIniPath: string;
+    function SelectedVoskDir: string;
+    function SelectedPiperVoice: string;
+    procedure FillModelCombos;
+    procedure FillCombo(cb: TComboBox; const AFolders: array of string);
+    procedure LoadAiSettings;
+    procedure SaveAiSettings;
+    { Handlers: master toggles, model combos, browse buttons, reloads, live
+      test row (Ask / Send to AI / Test TTS) and the status timer refresh. }
+    procedure OnTtsEnableToggle(Sender: TObject);
+    procedure OnSttEnableToggle(Sender: TObject);
+    procedure OnMicLipSyncToggle(Sender: TObject);
+    procedure OnVoskComboChange(Sender: TObject);
+    procedure OnPiperComboChange(Sender: TObject);
+    procedure OnBrowseVosk(Sender: TObject);
+    procedure OnBrowsePiper(Sender: TObject);
+    { Download buttons: open the official model pages in the default browser
+      (ShellExecute 'open'), so the user lands on the right download source
+      without hunting for it. }
+    procedure OnDownloadVoskModels(Sender: TObject);
+    procedure OnDownloadPiperVoices(Sender: TObject);
+    procedure OnReloadModels(Sender: TObject);
+    procedure OnAskSend(Sender: TObject);
+    { Enter in FAskEdit fires the send: the main vkReturn key routes
+      straight into OnAskSend. }
+    procedure OnAskKeyDown(Sender: TObject; var Key: Word; var KeyChar: Char;
+      Shift: TShiftState);
+    procedure OnTestTts(Sender: TObject);
+    procedure OnAiSettingChange(Sender: TObject);
+    { Key-level net for the endpoint edits: OnTyping does NOT fire on FMX
+      for clipboard pastes (Ctrl+V / right-click insert), so every key-up
+      (including Ctrl on paste) lands in ai.ini too. }
+    procedure OnAiKeyUp(Sender: TObject; var Key: Word; var KeyChar: Char;
+      Shift: TShiftState);
+    { Info / Debug tab handlers: apply the GPU-recommended particle budget
+      onto the avatar + the System tab slider, copy / clear the log memo. }
+    procedure OnApplyGpuBudget(Sender: TObject);
+    procedure OnCopyDebugLog(Sender: TObject);
+    procedure OnClearDebugLog(Sender: TObject);
+    { Rebuilds the Info / Debug tab's GPU info block from the live avatar
+      (detection may land AFTER the panel was built - GL init is lazy). }
+    procedure RefreshGpuInfo;
+    { Re-applies the whole AI & voice state onto the avatar after an INI
+      load: master toggle, mic / lip-sync mode, client config, pipeline. }
+    procedure ApplyAiSettingsToChaos;
     function NewTab(const ACaption: string): TTabItem;
     function AddSection(const ACaption: string): TLabel;
     function AddLabel(const ACaption: string): TLabel;
@@ -199,6 +312,10 @@ type
     procedure ApplyPartsFilter;
   public
     { Public declarations }
+    { Final-exit save for external forms (Unit1.FormDestroy): persists
+      ai.ini when the AI tab was built - a pasted endpoint value that fired
+      no OnTyping/OnChange event must not be lost on quit. }
+    procedure SaveSettingsIfBuilt;
   end;
 
 var
@@ -319,9 +436,11 @@ const
   tgNaturalBlink = 11;
 
 const
-  { Layout constants - wider-than-tall window sized for a normal HD screen. }
-  PANEL_W = 800;
-  PANEL_H = 700;
+  { Layout constants - wider-than-tall window sized for a normal HD screen.
+    The extra height (920) hosts the new AI & Voice tab with its model
+    combos, endpoint fields and the live-test row. }
+  PANEL_W = 900;
+  PANEL_H = 920;
   CTRL_X = 24;
   CTRL_W = 560;
   BTN_W = 260;
@@ -404,7 +523,7 @@ begin
     FCurrentTab := FMeshTab;
     AddSection('MESH / PARTICLES');
     AddTrack(tgStepFilter, 'Step filter', 1, 12, 1, GChaos.StepFilter);
-    AddTrack(tgParticleBudget, 'Particle budget', 500, 250000, 500, GChaos.ParticleBudget);
+    FTbParticleBudget := AddTrack(tgParticleBudget, 'Particle budget', 500, 250000, 500, GChaos.ParticleBudget);
     AddSection('LOAD');
     AddButton('Load mesh...', OnLoadMesh);
     AddSection('PARTS');
@@ -592,6 +711,252 @@ begin
     FFpsLabel := AddLabel('Real FPS: -');
     FIdleLabel := AddLabel('Idle: -');
 
+    { ---- Tab 8: AI & Voice ---- }
+    FCurrentTab := NewTab('AI & Voice');
+    AddSection('VOICE AI');
+    { Two INDEPENDENT toggles instead of one coupled master switch:
+      TTS-only starts just ma_engine + TYutaniPiperTTS (no capture device,
+      no libvosk.dll), STT-only starts just ma_device capture + Vosk (AI
+      answers appear as text + head gestures, no audio). Pure text chat
+      (Ask / Send to AI below) works with both off. }
+    FTtsEnableCheck := AddCheck(60, 'Enable TTS (Voice Output)', False);
+    FTtsEnableCheck.OnChange := OnTtsEnableToggle;
+    FSttEnableCheck := AddCheck(61, 'Enable STT (Microphone / Vosk)', False);
+    FSttEnableCheck.OnChange := OnSttEnableToggle;
+    { OBS / creator mode: the microphone only drives the mouth animation;
+      recognized text is never sent to the AI. }
+    FMicLipSyncCheck := AddCheck(62, 'Mic Lip-Sync Only (OBS Mode)', False);
+    FMicLipSyncCheck.OnChange := OnMicLipSyncToggle;
+    AddSection('STT / TTS MODELS');
+    { Vosk model combo: auto-scan of vosk\* folders + manual Browse. }
+    AddLabel('Vosk STT Model (auto-scan vosk\\*):');
+    FVoskCombo := TComboBox.Create(Self);
+    FVoskCombo.Parent := FCurrentTab;
+    FVoskCombo.Position.X := CTRL_X;
+    FVoskCombo.Position.Y := FNextY;
+    FVoskCombo.Width := CTRL_W - 110;
+    FVoskCombo.Tag := 60;
+    FVoskCombo.OnChange := OnVoskComboChange;
+    FVoskBrowseBtn := TButton.Create(Self);
+    FVoskBrowseBtn.Parent := FCurrentTab;
+    FVoskBrowseBtn.Position.X := CTRL_X + CTRL_W - 100;
+    FVoskBrowseBtn.Position.Y := FNextY;
+    FVoskBrowseBtn.Width := 96;
+    FVoskBrowseBtn.Text := 'Browse...';
+    FVoskBrowseBtn.OnClick := OnBrowseVosk;
+    FNextY := FNextY + 40;
+    { Reload re-scans the model folders (new files / drives). }
+    AddButton('Reload models', OnReloadModels);
+    { Download buttons: open the official model download pages in the
+      browser - compact width, placed right of Reload models so the whole
+      model-acquisition row stays together. }
+    FDownloadVoskBtn := TButton.Create(Self);
+    FDownloadVoskBtn.Parent := FCurrentTab;
+    FDownloadVoskBtn.Position.X := CTRL_X + 270;
+    FDownloadVoskBtn.Position.Y := FNextY - 34;
+    FDownloadVoskBtn.Width := 150;
+    FDownloadVoskBtn.Text := 'Download Vosk Models';
+    FDownloadVoskBtn.OnClick := OnDownloadVoskModels;
+    FDownloadPiperBtn := TButton.Create(Self);
+    FDownloadPiperBtn.Parent := FCurrentTab;
+    FDownloadPiperBtn.Position.X := CTRL_X + 430;
+    FDownloadPiperBtn.Position.Y := FNextY - 34;
+    FDownloadPiperBtn.Width := 150;
+    FDownloadPiperBtn.Text := 'Download Piper Voices';
+    FDownloadPiperBtn.OnClick := OnDownloadPiperVoices;
+    AddLabel('Piper TTS Voice (auto-scan sherpa\\*):');
+    FPiperCombo := TComboBox.Create(Self);
+    FPiperCombo.Parent := FCurrentTab;
+    FPiperCombo.Position.X := CTRL_X;
+    FPiperCombo.Position.Y := FNextY;
+    FPiperCombo.Width := CTRL_W - 110;
+    FPiperCombo.Tag := 61;
+    FPiperCombo.OnChange := OnPiperComboChange;
+    FPiperBrowseBtn := TButton.Create(Self);
+    FPiperBrowseBtn.Parent := FCurrentTab;
+    FPiperBrowseBtn.Position.X := CTRL_X + CTRL_W - 100;
+    FPiperBrowseBtn.Position.Y := FNextY;
+    FPiperBrowseBtn.Width := 96;
+    FPiperBrowseBtn.Text := 'Browse...';
+    FPiperBrowseBtn.OnClick := OnBrowsePiper;
+    FNextY := FNextY + 44;
+    AddSection('AI ENDPOINT');
+    { Any OpenAI-compatible chat/completions endpoint. Defaults match an
+      Ollama server on this machine. }
+    AddLabel('AI Base URL:');
+    FBaseUrlEdit := TEdit.Create(Self);
+    FBaseUrlEdit.Parent := FCurrentTab;
+    FBaseUrlEdit.Position.X := CTRL_X;
+    FBaseUrlEdit.Position.Y := FNextY;
+    FBaseUrlEdit.Width := CTRL_W;
+    FBaseUrlEdit.OnChange := OnAiSettingChange;
+    { OnTyping fires per keystroke (FMX OnChange waits for focus loss on
+      some platforms) - the endpoint config must land in ai.ini at EVERY
+      intermediate state so a tray quit mid-typing cannot lose it. OnExit +
+      OnKeyUp catch what OnTyping misses: clipboard pastes (Ctrl+V / right
+      click insert) fire NEITHER OnTyping nor OnChange until focus leaves. }
+    FBaseUrlEdit.OnTyping := OnAiSettingChange;
+    FBaseUrlEdit.OnExit := OnAiSettingChange;
+    FBaseUrlEdit.OnKeyUp := OnAiKeyUp;
+    FNextY := FNextY + 34;
+    AddLabel('AI Model:');
+    FModelEdit := TEdit.Create(Self);
+    FModelEdit.Parent := FCurrentTab;
+    FModelEdit.Position.X := CTRL_X;
+    FModelEdit.Position.Y := FNextY;
+    FModelEdit.Width := CTRL_W;
+    FModelEdit.OnChange := OnAiSettingChange;
+    FModelEdit.OnTyping := OnAiSettingChange;
+    FModelEdit.OnExit := OnAiSettingChange;
+    FModelEdit.OnKeyUp := OnAiKeyUp;
+    FNextY := FNextY + 34;
+    AddLabel('API Key (optional):');
+    FApiKeyEdit := TEdit.Create(Self);
+    FApiKeyEdit.Parent := FCurrentTab;
+    FApiKeyEdit.Position.X := CTRL_X;
+    FApiKeyEdit.Position.Y := FNextY;
+    FApiKeyEdit.Width := CTRL_W;
+    FApiKeyEdit.Password := True;
+    FApiKeyEdit.OnChange := OnAiSettingChange;
+    FApiKeyEdit.OnTyping := OnAiSettingChange;
+    FApiKeyEdit.OnExit := OnAiSettingChange;
+    FApiKeyEdit.OnKeyUp := OnAiKeyUp;
+    FNextY := FNextY + 34;
+    AddLabel('System Prompt:');
+    { Multi-line TMemo (not a single-line TEdit): the system prompt is a
+      whole paragraph, and TMemo.Text works the same as TEdit.Text for the
+      INI (Save/Load) - no OnTyping needed, TMemo fires OnChange per line. }
+    FSystemPromptEdit := TMemo.Create(Self);
+    FSystemPromptEdit.Parent := FCurrentTab;
+    FSystemPromptEdit.Position.X := CTRL_X;
+    FSystemPromptEdit.Position.Y := FNextY;
+    FSystemPromptEdit.Width := CTRL_W;
+    FSystemPromptEdit.Height := 60;
+    FSystemPromptEdit.OnChange := OnAiSettingChange;
+    FNextY := FNextY + 64;
+    AddSection('LIVE TEST');
+    { Ask / Say something... + Send to AI + Test TTS + status label. }
+    AddLabel('Ask / Say something...');
+    FAskEdit := TEdit.Create(Self);
+    FAskEdit.Parent := FCurrentTab;
+    FAskEdit.Position.X := CTRL_X;
+    FAskEdit.Position.Y := FNextY;
+    FAskEdit.Width := CTRL_W - 200;
+    FNextY := FNextY + 36;
+    FSendBtn := TButton.Create(Self);
+    FSendBtn.Parent := FCurrentTab;
+    FSendBtn.Position.X := CTRL_X;
+    FSendBtn.Position.Y := FNextY;
+    FSendBtn.Width := 130;
+    FSendBtn.Text := 'Send to AI';
+    FSendBtn.OnClick := OnAskSend;
+    FTestTtsBtn := TButton.Create(Self);
+    FTestTtsBtn.Parent := FCurrentTab;
+    FTestTtsBtn.Position.X := CTRL_X + 140;
+    FTestTtsBtn.Position.Y := FNextY;
+    FTestTtsBtn.Width := 130;
+    FTestTtsBtn.Text := 'Test TTS';
+    FTestTtsBtn.OnClick := OnTestTts;
+    FNextY := FNextY + 44;
+    { Status label: multi-line capable - word wrap on and ~52 px height so
+      AI answers in text-only mode ('AI: ...') and long fallback reasons
+      wrap instead of being cut off after the first line. }
+    FVoiceStatusLbl := AddLabel('Status: Idle');
+    FVoiceStatusLbl.WordWrap := True;
+    FVoiceStatusLbl.Height := 52;
+    FNextY := FNextY + 40;
+    { Enter in the ask edit sends the question right away - no mouse detour
+      to the Send button needed. }
+    FAskEdit.OnKeyDown := OnAskKeyDown;
+    { Parallel path arrays behind the model combos BEFORE the first fill -
+      FillModelCombos / SelectModelEntry write full paths into them while the
+      combos show short names only. }
+    FVoskPaths := TStringList.Create;
+    FPiperPaths := TStringList.Create;
+    { Model combos filled BEFORE the INI load so the saved picks appear in
+      them (SelectModelEntry inserts unknown-but-existing paths). The
+      load+apply here is the startup pass; OnFormShow repeats the load on
+      EVERY panel open so the edits always show the persisted values. }
+    FLoadingAiSettings := True;
+    try
+      FillModelCombos;
+      LoadAiSettings;
+    TThread.CreateAnonymousThread(
+      procedure
+      begin
+        Sleep(2600);
+        TThread.Synchronize(nil,
+          procedure
+          begin
+            if (not Application.Terminated) and (Form2 <> nil) then
+              Form2.ApplyAiSettingsToChaos;
+          end);
+      end).Start;
+    finally
+      FLoadingAiSettings := False;
+    end;
+
+
+    { ---- Tab 9: Info / Debug ---- }
+    FCurrentTab := NewTab('Info / Debug');
+    AddSection('GPU & SYSTEM INFO');
+    { GPU info block: detection runs lazily at the avatar's first GL frame,
+      so the label starts pending and RefreshGpuInfo fills it from
+      GChaos.GpuInfoText as soon as the snapshot exists (checked again in
+      OnFpsTimer). WordWrap + 6 lines of height give the multi-line block
+      room. }
+    FGpuInfoLbl := AddLabel('GPU detection pending (runs at first frame)...');
+    FGpuInfoLbl.WordWrap := True;
+    FGpuInfoLbl.Height := 110;
+    FNextY := FNextY + 98;
+    { Apply Recommended Particle Budget: pushes GpuRecommendedParticles into
+      GChaos.ParticleBudget and mirrors the System tab slider, so the
+      recommendation is one click instead of a manual slider hunt. }
+    FApplyGpuBudgetBtn := TButton.Create(Self);
+    FApplyGpuBudgetBtn.Parent := FCurrentTab;
+    FApplyGpuBudgetBtn.Position.X := CTRL_X;
+    FApplyGpuBudgetBtn.Position.Y := FNextY;
+    FApplyGpuBudgetBtn.Width := BTN_W;
+    FApplyGpuBudgetBtn.Text := 'Apply Recommended Particle Budget';
+    FApplyGpuBudgetBtn.OnClick := OnApplyGpuBudget;
+    FNextY := FNextY + 40;
+    AddSection('DEBUG LOG');
+    { Big read-only multi-line mirror of the avatar's thread-safe debug ring
+      buffer (GPU init, Vosk / piper status, AI requests / responses /
+      errors). ReadOnly so the user can scroll and MARK text without
+      accidentally editing; WordWrap keeps long lines visible. Updated from
+      OnFpsTimer ONLY when new lines arrived (serial changed). }
+    FDebugMemo := TMemo.Create(Self);
+    FDebugMemo.Parent := FCurrentTab;
+    FDebugMemo.Position.X := CTRL_X;
+    FDebugMemo.Position.Y := FNextY;
+    FDebugMemo.Width := CTRL_W;
+    FDebugMemo.Height := 300;
+    FDebugMemo.ReadOnly := True;
+    FDebugMemo.WordWrap := True;
+    FDebugMemo.Text := '';
+    FLastLogSerial := -1;
+    FNextY := FNextY + 310;
+    { Copy / Clear buttons in one row: Copy writes the memo text to the
+      clipboard (bug reports), Clear empties the mirror AND the avatar's
+      ring buffer. }
+    FCopyLogBtn := TButton.Create(Self);
+    FCopyLogBtn.Parent := FCurrentTab;
+    FCopyLogBtn.Position.X := CTRL_X;
+    FCopyLogBtn.Position.Y := FNextY;
+    FCopyLogBtn.Width := 130;
+    FCopyLogBtn.Text := 'Copy Log';
+    FCopyLogBtn.OnClick := OnCopyDebugLog;
+    FClearLogBtn := TButton.Create(Self);
+    FClearLogBtn.Parent := FCurrentTab;
+    FClearLogBtn.Position.X := CTRL_X + 140;
+    FClearLogBtn.Position.Y := FNextY;
+    FClearLogBtn.Width := 130;
+    FClearLogBtn.Text := 'Clear Log';
+    FClearLogBtn.OnClick := OnClearDebugLog;
+    FNextY := FNextY + 34;
+    RefreshGpuInfo;
+
     { The avatar may already run a restored startup preset (last.ini or the
       per-mesh automatic slot): sync every tab to that state now, so the
       panel opens showing the live style, part tints, inner parts and
@@ -619,6 +984,13 @@ procedure TForm2.FormDestroy(Sender: TObject);
 begin
   if Assigned(FTimer) then
     FTimer.Enabled := False;
+  { AI & voice settings persist across sessions; writes only when the AI tab
+    was actually built (combo assigned), so a nil-field guard is included. }
+  if FVoskCombo <> nil then
+    SaveAiSettings;
+  FLoadingAiSettings := True; //let it here, trust me :D
+  FreeAndNil(FVoskPaths);
+  FreeAndNil(FPiperPaths);
   FreeAndNil(FPartChecks);
   FreeAndNil(FPartCaptions);
   FreeAndNil(FPartColorBoxes);
@@ -626,11 +998,24 @@ begin
   FreeAndNil(FInnerPartColorBoxes);
 end;
 
+procedure TForm2.SaveSettingsIfBuilt;
+begin
+  { Public wrapper so Unit1.FormDestroy can flush ai.ini on the way down
+    without reaching into the private fields. }
+  if FVoskCombo <> nil then
+    SaveAiSettings;
+end;
+
 procedure TForm2.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
   { Hide instead of free so the tray can re-show us. Drag mode survives
     the hide: presets round-trip it, and the tray menu can restore
     click-through while the panel is closed. }
+  { AI settings persist on every close (X button, Esc, tray 'close
+    panel'): endpoint, model, API key and system prompt land in ai.ini
+    even when no single control fired a change event before closing. }
+  if FVoskCombo <> nil then
+    SaveAiSettings;
   Action := TCloseAction.caHide;
 end;
 
@@ -1312,6 +1697,66 @@ begin
     FIdleLabel.Text := 'Idle: yes (quiet pacing)'
   else
     FIdleLabel.Text := 'Idle: no (active pacing)';
+  { Live voice status on the AI & Voice tab (Idle / Listening / Thinking /
+    Speaking / Fallback: ...). }
+  if FVoiceStatusLbl <> nil then
+    FVoiceStatusLbl.Text := 'Status: ' + GChaos.VoiceStatusText;
+  { Info / Debug tab: GPU info once the lazy GL detection landed, and the
+    debug log mirror ONLY when new lines arrived (serial changed) - a
+    constant rebuild would stomp the user's scroll position / selection
+    inside the memo every 400 ms. }
+  if FGpuInfoLbl <> nil then
+    RefreshGpuInfo;
+  if (FDebugMemo <> nil) and (FLastLogSerial <> GChaos.DebugLogSerial) then
+  begin
+    FLastLogSerial := GChaos.DebugLogSerial;
+    FDebugMemo.Text := GChaos.GetDebugLogText;
+  end;
+end;
+
+procedure TForm2.RefreshGpuInfo;
+begin
+  if (FGpuInfoLbl = nil) or (not Assigned(GChaos)) then
+    Exit;
+  { GPU detection runs inside the avatar's first GL frame (lazy), so the
+    panel may be built BEFORE the snapshot exists. Show the pending text
+    until GpuInfoText is filled, then the detection block - refresh cost is
+    one string compare per timer tick. }
+  if GChaos.GpuInfoText <> '' then
+  begin
+    if FGpuInfoLbl.Text <> GChaos.GpuInfoText then
+      FGpuInfoLbl.Text := GChaos.GpuInfoText;
+  end
+  else if FGpuInfoLbl.Text <> 'GPU detection pending (runs at first frame)...' then
+    FGpuInfoLbl.Text := 'GPU detection pending (runs at first frame)...';
+end;
+
+procedure TForm2.OnApplyGpuBudget(Sender: TObject);
+var
+  Budget: Integer;
+begin
+  { One click from the detection straight into the live budget: pushes the
+    recommended particle count into the avatar AND mirrors the System /
+    Performance tab slider, so both stay in sync. 0 (detection failed / not
+    yet run) is a silent no-op - the button does nothing instead of
+    zeroing the budget. }
+  if not Assigned(GChaos) then
+    Exit;
+  Budget := GChaos.GpuRecommendedParticles;
+  if Budget <= 0 then
+    Exit;
+  GChaos.ParticleBudget := Cardinal(Budget);
+  if FValLabels[tgParticleBudget] <> nil then
+    FValLabels[tgParticleBudget].Text := 'Particle budget: ' + IntToStr(Budget);
+  if FTbParticleBudget <> nil then
+  begin
+    { Programmatic slider refresh without firing the change handler back
+      into the property the value came from (same pattern the preset sync
+      uses). }
+    FTbParticleBudget.OnChange := nil;
+    FTbParticleBudget.Value := EnsureRange(Budget, FTbParticleBudget.Min, FTbParticleBudget.Max);
+    FTbParticleBudget.OnChange := OnTrackChange;
+  end;
 end;
 
 {==============================================================================
@@ -1540,9 +1985,8 @@ end;
 
 procedure TForm2.OnFormShow(Sender: TObject);
 begin
-  { Every re-show (tray "Show controls", close/hide cycle) refreshes the
-    overlay controls from the live avatar state. }
-  SyncOverlayControls;
+  LoadAiSettings;
+  ApplyAiSettingsToChaos;
 end;
 
 procedure TForm2.OnFormHide(Sender: TObject);
@@ -1551,6 +1995,13 @@ begin
     presets and the tray menu can restore click-through while the panel
     is closed. Kept as the OnFormHide hook so the intent stays explicit
     where the close path cascades into it through caHide. }
+  { AI settings safety net: FormClose cascades into this hook through
+    caHide, so persisting here covers BOTH close paths (X button, tray
+    'close panel') plus every programmatic Hide - Base URL / Model /
+    API Key / System Prompt always land in ai.ini. Guarded against the
+    tab not being built (no combos = no settings worth saving). }
+  if FVoskCombo <> nil then
+    SaveAiSettings;
 end;
 
 procedure TForm2.SyncOverlayControls;
@@ -1740,6 +2191,502 @@ begin
   SyncTrack(FTbActiveFPS, GChaos.ActiveTargetFPS, 'Active target FPS: ' + IntToStr(GChaos.ActiveTargetFPS));
   SyncTrack(FTbIdleFPS, GChaos.IdleTargetFPS, 'Idle target FPS: ' + IntToStr(GChaos.IdleTargetFPS));
   SyncTrack(FTbIdleTimeout, GChaos.IdleTimeoutSec, 'Idle timeout (s): ' + FormatFloat('0.0', GChaos.IdleTimeoutSec));
+end;
+
+{==============================================================================
+  AI & Voice tab
+==============================================================================}
+
+function TForm2.GetAiIniPath: string;
+begin
+  { ONE fixed, unambiguous path so reads and writes can never diverge:
+    ai.ini ALWAYS sits directly beside the EXE. The previous multi-folder
+    lookup (exe dir / two levels up) could resolve reads to the project
+    folder while a later save hit the exe copy (or vice versa) after a
+    rebuild/move - the panel then showed defaults no matter what was
+    stored. Debug and Release each keep their own file next to their own
+    binary; copy once when switching profiles. }
+  Result := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + 'ai.ini';
+end;
+
+procedure TForm2.FillCombo(cb: TComboBox; const AFolders: array of string);
+var
+  I: Integer;
+  ExePath, Folder, Entry: string;
+  { System.SysUtils-qualified: Winapi.Windows sits AFTER SysUtils in the
+    uses clause and re-exports FindFirstFile etc.; unqualified FindFirst
+    would resolve into the Winapi overload and hand the SysUtils record to
+    a Windows handle API (NativeUInt vs TSearchRec compile clash). }
+  SR: System.SysUtils.TSearchRec;
+begin
+  { NIL CHECK FIRST: the panel may build the AI tab before the combos exist
+    (startup order) - never touch a nil combo. }
+  if cb = nil then
+    Exit;
+  ExePath := ExtractFilePath(ParamStr(0));
+  for I := 0 to High(AFolders) do
+  begin
+    Folder := IncludeTrailingPathDelimiter(ExePath) + AFolders[I];
+    if not DirectoryExists(Folder) then
+      Continue;
+    { Every direct sub-folder is a candidate model (vosk-model-small-en-us,
+      a piper voice folder, ...); the combo entry shows the SHORT folder
+      name, the full path lives in the parallel array at the same index. }
+    if System.SysUtils.FindFirst(IncludeTrailingPathDelimiter(Folder) + '*', faDirectory, SR) = 0 then
+    try
+      repeat
+        Entry := IncludeTrailingPathDelimiter(Folder) + SR.Name;
+        if (SR.Name <> '.') and (SR.Name <> '..') and DirectoryExists(Entry) then
+        begin
+          if cb = FVoskCombo then
+            SelectModelEntry(FVoskCombo, FVoskPaths, Entry)
+          else if cb = FPiperCombo then
+            SelectModelEntry(FPiperCombo, FPiperPaths, Entry);
+        end;
+      until System.SysUtils.FindNext(SR) <> 0;
+    finally
+      System.SysUtils.FindClose(SR);
+    end;
+  end;
+  { Ensure a usable empty state. }
+  if cb.Items.Count > 0 then
+    cb.ItemIndex := 0;
+end;
+
+function TForm2.SelectModelEntry(ACombo: TComboBox; APaths: TStringList;
+  const AFullPath: string): Boolean;
+begin
+  { Adds AFullPath (combo shows the SHORT name, array keeps the full path)
+  and selects it. Returns True when the entry was new. The combo items and
+  the array stay index-parallel: every path goes in through here. }
+  Result := False;
+  if (ACombo = nil) or (APaths = nil) or (AFullPath = '') then
+    Exit;
+  if APaths.IndexOf(AFullPath) < 0 then
+  begin
+    APaths.Add(AFullPath);
+    ACombo.Items.Add(ExtractFileName(ExcludeTrailingPathDelimiter(AFullPath)));
+    Result := True;
+  end;
+  ACombo.ItemIndex := APaths.IndexOf(AFullPath);
+end;
+
+function TForm2.PathForComboIndex(ACombo: TComboBox; APaths: TStringList): string;
+begin
+  { Full path behind the combo's current selection ('' when none). The
+    indices are kept parallel by SelectModelEntry, so the combo's ItemIndex
+    reads the array directly. }
+  Result := '';
+  if (ACombo = nil) or (APaths = nil) then
+    Exit;
+  if (ACombo.ItemIndex >= 0) and (ACombo.ItemIndex < APaths.Count) then
+    Result := APaths[ACombo.ItemIndex];
+end;
+
+procedure TForm2.FillModelCombos;
+var
+  SherpaDir: string;
+  { Same System.SysUtils qualification as in FillCombo - see the note there. }
+  SR: System.SysUtils.TSearchRec;
+  ExePath: string;
+begin
+  { NIL CHECK FIRST: FillModelCombos runs from FormCreate after the AI tab is
+    built - but also defensively from Reload; a nil combo must never AV. }
+  if FVoskCombo = nil then
+    Exit;
+  if FPiperCombo = nil then
+    Exit;
+  ExePath := ExtractFilePath(ParamStr(0));
+  { Combo items + parallel path arrays are rebuilt together (the arrays are
+    the source of truth; combos display short names only). }
+  FVoskCombo.Items.Clear;
+  FPiperCombo.Items.Clear;
+  FVoskPaths.Clear;
+  FPiperPaths.Clear;
+  { Vosk STT: every sub-folder of vosk\ (unpacked model directories). }
+  FillCombo(FVoskCombo, ['vosk']);
+  { Piper TTS: every sub-folder of sherpa\ (voice folders with .onnx +
+    tokens.txt + optional espeak-ng-data / lexicon.txt inside). }
+  FillCombo(FPiperCombo, ['sherpa']);
+  { Loose piper voice directly in sherpa\ (the .onnx + tokens.txt sit in
+    the folder root): add the folder itself as an entry. FindFirst must run
+    into its own try/finally so the handle is always closed. }
+  SherpaDir := IncludeTrailingPathDelimiter(ExePath) + 'sherpa';
+  if DirectoryExists(SherpaDir) then
+  begin
+    if System.SysUtils.FindFirst(IncludeTrailingPathDelimiter(SherpaDir) + '*.onnx', faAnyFile, SR) = 0 then
+    try
+      if FileExists(IncludeTrailingPathDelimiter(SherpaDir) + 'tokens.txt') then
+        SelectModelEntry(FPiperCombo, FPiperPaths, SherpaDir);
+    finally
+      System.SysUtils.FindClose(SR);
+    end;
+  end;
+  { Scan finished; leave selection to LoadAiSettings / defaults. }
+  if (FVoskCombo.Items.Count > 0) and (FVoskCombo.ItemIndex < 0) then
+    FVoskCombo.ItemIndex := 0;
+  if (FPiperCombo.Items.Count > 0) and (FPiperCombo.ItemIndex < 0) then
+    FPiperCombo.ItemIndex := 0;
+end;
+
+procedure TForm2.LoadAiSettings;
+var
+  Ini: TMemIniFile;
+  S: string;
+  I: Integer;
+begin
+  if not FileExists(GetAiIniPath) then
+    Exit;
+  { GUARD FIRST: setting the checkboxes / edits below fires their already
+    wired OnChange / OnTyping handlers; without the guard the very first
+    assignment (FTtsEnableCheck.IsChecked := ...) would run
+    OnTtsEnableToggle -> SaveAiSettings while FBaseUrlEdit & co. still
+    hold their empty / default state, instantly wiping ai.ini with the
+    defaults. Every settings handler checks the guard and exits early. }
+  FLoadingAiSettings := True;
+  try
+    Ini := TMemIniFile.Create(GetAiIniPath);
+    try
+      { New split keys TtsEnabled / SttEnabled; the legacy coupled keys
+        migrate: the old master 'Enabled' switches the whole voice stack,
+        so TTS follows it alone (a former master=on + MicEnabled=off was a
+        TTS-only setup and must stay that way), STT additionally required
+        the old MicEnabled. }
+      FTtsEnableCheck.IsChecked := Ini.ReadBool('Voice', 'TtsEnabled',
+        Ini.ReadBool('Voice', 'Enabled', False));
+      FSttEnableCheck.IsChecked := Ini.ReadBool('Voice', 'SttEnabled',
+        Ini.ReadBool('Voice', 'Enabled', False) and
+        Ini.ReadBool('Voice', 'MicEnabled', True));
+      FMicLipSyncCheck.IsChecked := Ini.ReadBool('Voice', 'MicLipSyncOnly', False);
+      { Model folders: exact stored path wins when it still exists, otherwise
+        the first scanned entry / empty. SelectModelEntry inserts the full
+        path (short display name) at the top when the scan did not know it. }
+      S := Ini.ReadString('Models', 'VoskModelDir', '');
+      if (S <> '') and DirectoryExists(S) and (FVoskCombo <> nil) then
+        SelectModelEntry(FVoskCombo, FVoskPaths, S);
+      S := Ini.ReadString('Models', 'PiperVoice', '');
+      if (S <> '') and ((DirectoryExists(S)) or FileExists(S)) and (FPiperCombo <> nil) then
+        SelectModelEntry(FPiperCombo, FPiperPaths, S);
+      FBaseUrlEdit.Text := Ini.ReadString('AI', 'BaseUrl', 'http://localhost:11434/v1/chat/completions');
+      FModelEdit.Text := Ini.ReadString('AI', 'Model', 'llama3.2');
+      FApiKeyEdit.Text := Ini.ReadString('AI', 'ApiKey', '');
+      { '\n' -> real line break: the INI stores the prompt with escaped
+        breaks (see SaveAiSettings) so a multi-line prompt round-trips. }
+      FSystemPromptEdit.Text := StringReplace(
+        Ini.ReadString('AI', 'SystemPrompt',
+          'You are C.H.A.O.S., a dry, witty AI living inside a 3D particle hologram. ' +
+          'Start EVERY reply with exactly one gesture tag from [neutral], [nod], ' +
+          '[shake], [tilt], [think], [alert], followed by a concise spoken answer ' +
+          '(max 2 sentences, no markdown or emojis).'),
+        '\n', sLineBreak, [rfReplaceAll]);
+      I := Ini.ReadInteger('AI', 'MaxHistory', 10);
+      if Assigned(GChaos) and (GChaos.AIClient <> nil) then
+        GChaos.AIClient.MaxHistoryMessages := I;
+    finally
+      Ini.Free;
+    end;
+    { Startup hand-over: the loaded endpoint values go straight into the live
+      avatar client (independent of the voice toggles - text chat works with
+      the whole audio stack off), so the very first Ask / mic request already
+      runs against the ai.ini endpoint without waiting for the first
+      OnAiSettingChange. ApplyAiSettingsToChaos follows right after in
+      FormCreate and covers the toggle / pipeline side. }
+    if Assigned(GChaos) then
+      GChaos.EnsureAIClient(FBaseUrlEdit.Text, FModelEdit.Text,
+        FApiKeyEdit.Text, FSystemPromptEdit.Text);
+  finally
+    FLoadingAiSettings := False;
+  end;
+end;
+
+procedure TForm2.SaveAiSettings;
+var
+  Ini: TMemIniFile;
+begin
+  { GUARD: never write ai.ini while LoadAiSettings is pushing values into
+    the controls - the intermediate control state would hit the file. }
+  if FLoadingAiSettings then
+    Exit;
+  Ini := TMemIniFile.Create(GetAiIniPath);
+  try
+    if FTtsEnableCheck <> nil then
+      Ini.WriteBool('Voice', 'TtsEnabled', FTtsEnableCheck.IsChecked);
+    if FSttEnableCheck <> nil then
+      Ini.WriteBool('Voice', 'SttEnabled', FSttEnableCheck.IsChecked);
+    if FMicLipSyncCheck <> nil then
+      Ini.WriteBool('Voice', 'MicLipSyncOnly', FMicLipSyncCheck.IsChecked);
+    if FVoskCombo <> nil then
+      Ini.WriteString('Models', 'VoskModelDir', SelectedVoskDir);
+    if FPiperCombo <> nil then
+      Ini.WriteString('Models', 'PiperVoice', SelectedPiperVoice);
+    if FBaseUrlEdit <> nil then
+      Ini.WriteString('AI', 'BaseUrl', FBaseUrlEdit.Text);
+    if FModelEdit <> nil then
+      Ini.WriteString('AI', 'Model', FModelEdit.Text);
+    if FApiKeyEdit <> nil then
+      Ini.WriteString('AI', 'ApiKey', FApiKeyEdit.Text);
+    if FSystemPromptEdit <> nil then
+      { TMemo keeps real line breaks; TMemIniFile.WriteString would put RAW
+        CR/LF into the .ini and corrupt the file on the next read. Escape
+        to a literal '\n' token (round-tripped in LoadAiSettings). }
+      Ini.WriteString('AI', 'SystemPrompt',
+        StringReplace(FSystemPromptEdit.Text, sLineBreak, '\n', [rfReplaceAll]));
+    Ini.UpdateFile;
+  finally
+    Ini.Free;
+  end;
+  { Persisted confirmation straight into the panel's debug log: path only,
+    NEVER the API key or any other content - one line proves the write went
+    to the file the user expects, and GetAiIniPath now returns one fixed
+    exe-side path so this line also settles which file was hit. }
+  if Assigned(GChaos) then
+    GChaos.AppendDebugLog('Saved ai.ini -> ' + GetAiIniPath);
+end;
+
+function TForm2.SelectedVoskDir: string;
+begin
+  { Current Vosk pick: the FULL path behind the combo's short display name,
+    or '' when nothing is chosen (STT simply stays off). }
+  Result := PathForComboIndex(FVoskCombo, FVoskPaths);
+end;
+
+function TForm2.SelectedPiperVoice: string;
+begin
+  { Current piper voice pick: the FULL path (folder or .onnx file) behind
+    the combo's short display name. }
+  Result := PathForComboIndex(FPiperCombo, FPiperPaths);
+end;
+
+procedure TForm2.ApplyAiSettingsToChaos;
+begin
+  if not Assigned(GChaos) then
+    Exit;
+  { AI client on demand - INDEPENDENT of both voice toggles: text chat works
+    with the whole audio stack off. }
+  GChaos.EnsureAIClient(FBaseUrlEdit.Text, FModelEdit.Text, FApiKeyEdit.Text, FSystemPromptEdit.Text);
+  { Split activation: TTS and STT are handed to the avatar separately, so
+    each side lives/dies alone (TTS-only = engine + voice, no mic; STT-only =
+    mic + Vosk, answers as text + gestures). }
+  GChaos.VoiceTtsEnabled := FTtsEnableCheck.IsChecked;
+  GChaos.VoiceSttEnabled := FSttEnableCheck.IsChecked;
+  if FTtsEnableCheck.IsChecked or FSttEnableCheck.IsChecked then
+    { Hand the LIVE model picks over so the pipeline loads exactly what the
+    combos show (empty picks degrade to text chat + SAPI TTS). }
+    GChaos.ActivatePendingVoice(SelectedVoskDir, SelectedPiperVoice);
+  { OBS lip-sync mode mirrors the pipeline live when it exists. }
+  if GChaos.VoicePipeline <> nil then
+    GChaos.VoicePipeline.MicLipSyncOnly := FMicLipSyncCheck.IsChecked;
+end;
+
+procedure TForm2.OnTtsEnableToggle(Sender: TObject);
+begin
+  { GUARD: skip the echo storm while LoadAiSettings fills the controls. }
+  if FLoadingAiSettings then
+    Exit;
+  SaveAiSettings;
+  ApplyAiSettingsToChaos;
+end;
+
+procedure TForm2.OnSttEnableToggle(Sender: TObject);
+begin
+  { GUARD: see OnTtsEnableToggle. }
+  if FLoadingAiSettings then
+    Exit;
+  SaveAiSettings;
+  ApplyAiSettingsToChaos;
+end;
+
+procedure TForm2.OnMicLipSyncToggle(Sender: TObject);
+begin
+  { GUARD: see OnTtsEnableToggle. }
+  if FLoadingAiSettings then
+    Exit;
+  SaveAiSettings;
+  if Assigned(GChaos) and (GChaos.VoicePipeline <> nil) then
+    GChaos.VoicePipeline.MicLipSyncOnly := FMicLipSyncCheck.IsChecked;
+end;
+
+procedure TForm2.OnVoskComboChange(Sender: TObject);
+begin
+  { GUARD: combo selections change while the INI pick is re-selected during
+    the load - those are not user picks. }
+  if FLoadingAiSettings then
+    Exit;
+  { Model picks are applied immediately: store AND re-apply, so a Vosk
+    model switch in the combo reaches the avatar without waiting for the
+    next activation (ApplyAiSettingsToChaos hands the new pick to
+    ActivatePendingVoice / the live pipeline). }
+  SaveAiSettings;
+  ApplyAiSettingsToChaos;
+end;
+
+procedure TForm2.OnPiperComboChange(Sender: TObject);
+begin
+  { GUARD: see OnVoskComboChange. }
+  if FLoadingAiSettings then
+    Exit;
+  { Same immediate re-apply for the piper voice pick. }
+  SaveAiSettings;
+  ApplyAiSettingsToChaos;
+end;
+
+procedure TForm2.OnBrowseVosk(Sender: TObject);
+var
+  Dir: string;
+begin
+  { Manual folder pick: ANY path / language works (the INI stores it, the
+    pipeline loads it), independent of the auto-scan folders. The combo
+    shows the short folder name, the parallel array keeps the full path. }
+  Dir := '';
+  if SelectDirectory('Select Vosk model folder', ExtractFilePath(ParamStr(0)), Dir) then
+  begin
+    SelectModelEntry(FVoskCombo, FVoskPaths, Dir);
+    SaveAiSettings;
+    ApplyAiSettingsToChaos;
+  end;
+end;
+
+procedure TForm2.OnBrowsePiper(Sender: TObject);
+var
+  Dir: string;
+begin
+  Dir := '';
+  if SelectDirectory('Select Piper voice folder (or .onnx parent)', ExtractFilePath(ParamStr(0)), Dir) then
+  begin
+    SelectModelEntry(FPiperCombo, FPiperPaths, Dir);
+    SaveAiSettings;
+    ApplyAiSettingsToChaos;
+  end;
+end;
+
+procedure TForm2.OnReloadModels(Sender: TObject);
+var
+  VoskSel, PiperSel: string;
+begin
+  { Keep the current picks across the re-scan. }
+  VoskSel := SelectedVoskDir;
+  PiperSel := SelectedPiperVoice;
+  FillModelCombos;
+  { Re-select the previously picked full paths (re-added on top when the
+    re-scan no longer lists them - e.g. an external drive vanished and the
+    pick should still survive in the INI). }
+  if (VoskSel <> '') and (DirectoryExists(VoskSel)) then
+    SelectModelEntry(FVoskCombo, FVoskPaths, VoskSel);
+  if (PiperSel <> '') and ((DirectoryExists(PiperSel)) or FileExists(PiperSel)) then
+    SelectModelEntry(FPiperCombo, FPiperPaths, PiperSel);
+end;
+
+procedure TForm2.OnDownloadVoskModels(Sender: TObject);
+begin
+  { Exact official Vosk model download page (alphacephei.com/vosk lists
+    every model archive). ShellExecute with 'open' launches the default
+    browser. }
+  ShellExecute(0, 'open', 'https://alphacephei.com', nil, nil, SW_SHOWNORMAL);
+end;
+
+procedure TForm2.OnDownloadPiperVoices(Sender: TObject);
+begin
+  { Exact official piper voices download page (the rhasspy/piper voices
+    release list). ShellExecute with 'open' launches the default browser. }
+  ShellExecute(0, 'open', 'https://github.com', nil, nil, SW_SHOWNORMAL);
+end;
+
+procedure TForm2.OnAskSend(Sender: TObject);
+begin
+  { Persist the endpoint fields before the request leaves the app: the
+    user may have typed a new Base URL / Model / Key straight into the
+    edits and pressed Enter or Send - without this save a crash or panel
+    close right after the request would lose the freshly typed config. }
+  if FVoskCombo <> nil then
+    SaveAiSettings;
+  if not Assigned(GChaos) then
+    Exit;
+  if Trim(FAskEdit.Text) = '' then
+    Exit;
+  { Works with or without voice: AskAI configures the client on demand. }
+  GChaos.AskAI(FAskEdit.Text);
+  FAskEdit.Text := '';
+end;
+
+procedure TForm2.OnAskKeyDown(Sender: TObject; var Key: Word; var KeyChar: Char;
+  Shift: TShiftState);
+begin
+  { Enter sends the question; the key is consumed so no stray
+    newline/whitespace lands in the single-line edit. Only vkReturn is
+    checked - vkEnter does not exist on every FMX platform version, which
+    broke compilation (undefined identifier). }
+  if Key = vkReturn then
+  begin
+    Key := 0;
+    OnAskSend(Self);
+  end;
+end;
+
+procedure TForm2.OnTestTts(Sender: TObject);
+begin
+  if not Assigned(GChaos) then
+    Exit;
+  { Speaks a fixed sample through piper / SAPI so the voice chain is
+    testable without any AI round-trip. SpeakVoice logs the call into the
+    debug log, so a missing audio shows up in the Info / Debug tab. }
+  GChaos.SpeakVoice('Hello World');
+end;
+
+procedure TForm2.OnAiSettingChange(Sender: TObject);
+begin
+  { GUARD: LoadAiSettings assigns the edit .Text values below - those are
+    programmatic writes, not user typing; without the guard each assignment
+    would fire this handler and SaveAiSettings (with partly stale controls). }
+  if FLoadingAiSettings then
+    Exit;
+  { Endpoint / prompt edits: persist and push into the live client. Fired
+    per keystroke through BOTH events - OnChange (classic, fires on focus
+    loss / programmatic change) and OnTyping (per keystroke on desktop FMX)
+    - so every intermediate state lands in ai.ini immediately; a tray quit
+    mid-typing cannot lose the config. The INI write is cheap enough. }
+  SaveAiSettings;
+  if Assigned(GChaos) then
+    GChaos.EnsureAIClient(FBaseUrlEdit.Text, FModelEdit.Text, FApiKeyEdit.Text, FSystemPromptEdit.Text);
+end;
+
+procedure TForm2.OnAiKeyUp(Sender: TObject; var Key: Word; var KeyChar: Char;
+  Shift: TShiftState);
+begin
+  { Copy-paste net: FMX OnTyping does not fire for clipboard inserts, so
+    the pasted value could sit in the edit for minutes without reaching
+    ai.ini. OnKeyUp catches those (a paste releases Ctrl+V = two key-ups)
+    and reuses the same persist + push path. Guard mirrors
+    OnAiSettingChange. }
+  if FLoadingAiSettings then
+    Exit;
+  SaveAiSettings;
+  if Assigned(GChaos) then
+    GChaos.EnsureAIClient(FBaseUrlEdit.Text, FModelEdit.Text, FApiKeyEdit.Text, FSystemPromptEdit.Text);
+end;
+
+procedure TForm2.OnCopyDebugLog(Sender: TObject);
+var
+  Svc: IFMXClipboardService;
+begin
+  { Copies the memo text to the clipboard (bug reports / sharing). Goes
+    through the platform clipboard service - TClipboard / memo methods are
+    kept out so it also works headless of any edit focus. Nil-safe on
+    platforms without a clipboard service. }
+  if (FDebugMemo = nil) or (FDebugMemo.Text = '') then
+    Exit;
+  if TPlatformServices.Current.SupportsPlatformService(IFMXClipboardService, Svc) then
+    Svc.SetClipboard(FDebugMemo.Text);
+end;
+
+procedure TForm2.OnClearDebugLog(Sender: TObject);
+begin
+  { Clears the mirror AND asks the avatar to reset its ring buffer (the
+    serial changes, so the next timer tick re-syncs the memo). }
+  if FDebugMemo <> nil then
+    FDebugMemo.Text := '';
+  if Assigned(GChaos) then
+    GChaos.ClearDebugLog;
+  FLastLogSerial := -1;
 end;
 
 end.
