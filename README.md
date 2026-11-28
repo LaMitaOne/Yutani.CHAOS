@@ -98,7 +98,7 @@ Depends on loaded meshs, max particles, size, fps, etc settings sure too a lot.
 ### Built From / Evolution     
 *C.H.A.O.S.* is the direct result and convergence of my previous Delphi / Skia / GPU experiments:    
      
-- **[DesktopPetBase](https://github.com/LaMitaOne/SkiaDesktopPetBase)** (transparent click-through desktop overlay & window layering)    
+- **[DesktopPetBase](https://github.com/LaMitaOne/SkiaDesktopPetBase)** (transparent click-through desktop overlay & window layering & dirtyrect)    
 - **[Skia FlowMotion](https://github.com/LaMitaOne/skia-flowmotion)** (spring physics & the autonomous *AliveHighlighter* companion)    
 - **[Yutani.NanoFog](https://github.com/LaMitaOne/Yutani-Building-better-worlds)** & **[Yutani Particle Engine](https://github.com/LaMitaOne/Yutani-Particle-Engine)** (high-count particle simulation & morphing)    
 - **[GPU Particle Engine](https://github.com/LaMitaOne/Yutani-GPU-Particles)** (native Raylib / OpenGL compute & instanced rendering pipeline)    
