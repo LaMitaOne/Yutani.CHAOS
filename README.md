@@ -58,7 +58,7 @@ v0.4:  https://youtu.be/sGEjN7L1UJA
 - **AI API & Lip-Sync Integration:** Connecting an OpenAI-compatible REST bridge (`/v1/chat/completions` supporting local Ollama / `llama.cpp` as well as free cloud APIs) paired with real-time audio-driven jaw/lip-sync (`MouthOpen`) and optional offline speech recognition (**Vosk**) + neural TTS (**Piper** / `MiniAudio4Delphi`).
 - **Self-Reflection & Embodied Avatar Control:** Giving the AI direct runtime control over its own visual appearance—switching meshes (`angelica.glb`, `cyberhead`, etc.), hologram styles, colors, emotions, and `HeadLook` / `EyeLook` vectors to express context and mood.
 - **Expanded Fullscreen Desktop Overlay Drawing & Writing:** Extending the decoupled `DirtyRect` fullscreen overlay layer so the AI can draw callouts, annotations, arrows, and live desktop hints directly alongside `TAliveHighlighter`.
-
+- **Mobile Version:** Trying to get it running on...old...phones :D.    
      
 ---     
      
