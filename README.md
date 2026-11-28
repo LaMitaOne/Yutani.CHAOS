@@ -181,6 +181,7 @@ includes:
 -Vosk (libvosk.dll) – Copyright Alpha Cephei Inc., Apache License 2.0    
 -Sherpa-ONNX (sherpa-onnx-c-api.dll, onnxruntime.dll) – Copyright Xiaomi Corporation / k2-fsa, Apache License 2.0 (MIT for ONNX Runtime)    
 -MiniAudio for Delphi https://github.com/LaMitaOne/MiniAudio4Delphi    
+-Yutani GPU Info https://github.com/LaMitaOne/Yutani-GPUInfo     
     
 and some day maybe...     
 -Skia GPU Alive Particle Components     
