@@ -179,12 +179,12 @@ Want to try more heads right away? Drop any `.glb` or `.obj` into your mesh fold
 ---
 
 includes:   
--Skia CustomThreadedBase https://github.com/LaMitaOne/SkiaCustomThreadedBase       
--uSkiaAliveHighlighter out of https://github.com/LaMitaOne/skia-flowmotion   
--Vosk (libvosk.dll) – Copyright Alpha Cephei Inc., Apache License 2.0    
--Sherpa-ONNX (sherpa-onnx-c-api.dll, onnxruntime.dll) – Copyright Xiaomi Corporation / k2-fsa, Apache License 2.0 (MIT for ONNX Runtime)    
--MiniAudio for Delphi https://github.com/LaMitaOne/MiniAudio4Delphi    
--Yutani GPU Info https://github.com/LaMitaOne/Yutani-GPUInfo     
+- Skia CustomThreadedBase https://github.com/LaMitaOne/SkiaCustomThreadedBase       
+- uSkiaAliveHighlighter out of https://github.com/LaMitaOne/skia-flowmotion   
+- [Vosk (`libvosk.dll`)](https://github.com/alphacep/vosk-api) – Copyright Alpha Cephei Inc., Apache License 2.0      
+- [Sherpa-ONNX (`sherpa-onnx-c-api.dll`, `onnxruntime.dll`)](https://github.com/k2-fsa/sherpa-onnx) – Copyright Xiaomi Corporation / k2-fsa, Apache License 2.0 (MIT for ONNX Runtime)          
+- MiniAudio for Delphi https://github.com/LaMitaOne/MiniAudio4Delphi    
+- Yutani GPU Info https://github.com/LaMitaOne/Yutani-GPUInfo     
     
 and some day maybe...     
 -Skia GPU Alive Particle Components     
