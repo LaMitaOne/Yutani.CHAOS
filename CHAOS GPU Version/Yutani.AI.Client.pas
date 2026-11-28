@@ -3,22 +3,26 @@ unit Yutani.AI.Client;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.JSON, System.Net.HttpClient, System.NetConsts,
-  System.Generics.Collections, System.Net.URLClient;
+  System.SysUtils, System.Classes, System.JSON, System.Net.HttpClient,
+  System.NetConsts, System.Generics.Collections, System.Net.URLClient;
 
 type
   /// <summary>Event fired when an action tag like 'nod' or 'shake' was detected.</summary>
   TYutaniActionTagEvent = procedure(Sender: TObject; const ATag: string) of object;
   /// <summary>Event fired with the spoken text (tag stripped).</summary>
+
   TYutaniResponseEvent = procedure(Sender: TObject; const ASpokenText: string) of object;
   /// <summary>Event fired on error with a human-readable message.</summary>
+
   TYutaniErrorEvent = procedure(Sender: TObject; const AErrorMsg: string) of object;
   /// <summary>Simple notification event.</summary>
+
   TYutaniNotifyEvent = procedure(Sender: TObject) of object;
   /// <summary>
   ///   Slim, framework-independent async client for any OpenAI-compatible
   ///   chat/completions REST endpoint (Ollama, LM Studio, Groq, OpenRouter, OpenAI).
   /// </summary>
+
   TYutaniAIClient = class(TComponent)
   private
     FBaseURL: string;
@@ -131,9 +135,7 @@ begin
       if (Response.StatusCode >= 200) and (Response.StatusCode < 300) then
         FClient.ParseResponse(Response.ContentAsString(TEncoding.UTF8))
       else
-        FClient.FireError(Format('HTTP %d: %s (%s)',
-          [Response.StatusCode, Response.StatusText,
-           Copy(Response.ContentAsString(TEncoding.UTF8), 1, 140)]));
+        FClient.FireError(Format('HTTP %d: %s (%s)', [Response.StatusCode, Response.StatusText, Copy(Response.ContentAsString(TEncoding.UTF8), 1, 140)]));
 
     except
       on E: Exception do

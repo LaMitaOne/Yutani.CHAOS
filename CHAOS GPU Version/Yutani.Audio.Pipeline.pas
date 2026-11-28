@@ -47,36 +47,31 @@ unit Yutani.Audio.Pipeline;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Math,
-  Winapi.Windows,
-  MiniAudio4Delphi,
-  Yutani.Audio.Vosk,
-  Yutani.Audio.PiperTTS;
+  System.SysUtils, System.Classes, System.Math, Winapi.Windows, MiniAudio4Delphi,
+  Yutani.Audio.Vosk, Yutani.Audio.PiperTTS;
 
 const
   // ma_device_config field offsets on Win64 (see miniaudio.h, struct
   // ma_device_config). The demo fills a 288 byte buffer manually because
   // MiniAudio4Delphi declares ma_device_config as an opaque Pointer.
-  MADC_SIZE                    = 288;
-  MADC_OFF_DEVICE_TYPE         = 0;    // ma_device_type (capture = 2)
-  MADC_OFF_SAMPLE_RATE         = 4;    // ma_uint32
-  MADC_OFF_PERIOD_MS           = 12;   // ma_uint32
-  MADC_OFF_PERIODS             = 16;   // ma_uint32
-  MADC_OFF_DATA_CALLBACK       = 32;   // ma_device_data_proc
-  MADC_OFF_PUSER_DATA          = 56;   // void*
-  MADC_OFF_CAPTURE_FORMAT      = 160;  // ma_format (s16 = 2)
-  MADC_OFF_CAPTURE_CHANNELS    = 164;  // ma_uint32
+  MADC_SIZE = 288;
+  MADC_OFF_DEVICE_TYPE = 0;    // ma_device_type (capture = 2)
+  MADC_OFF_SAMPLE_RATE = 4;    // ma_uint32
+  MADC_OFF_PERIOD_MS = 12;   // ma_uint32
+  MADC_OFF_PERIODS = 16;   // ma_uint32
+  MADC_OFF_DATA_CALLBACK = 32;   // ma_device_data_proc
+  MADC_OFF_PUSER_DATA = 56;   // void*
+  MADC_OFF_CAPTURE_FORMAT = 160;  // ma_format (s16 = 2)
+  MADC_OFF_CAPTURE_CHANNELS = 164;  // ma_uint32
 
 type
   // matches: void (* ma_device_data_proc)(ma_device*, void*, const void*, ma_uint32)
-  TMaDeviceDataProc = procedure(pDevice: Pointer; pOutput: Pointer;
-    pInput: Pointer; frameCount: Cardinal); cdecl;
+  TMaDeviceDataProc = procedure(pDevice: Pointer; pOutput: Pointer; pInput: Pointer; frameCount: Cardinal); cdecl;
 
   { Event signatures re-exported for convenience (same as in the units). }
-  TVoicePipelineHeard = procedure(Sender: TObject;
-    const AText: string; AIsFinal: Boolean) of object;
-  TVoicePipelineMessage = procedure(Sender: TObject;
-    const AMsg: string) of object;
+  TVoicePipelineHeard = procedure(Sender: TObject; const AText: string; AIsFinal: Boolean) of object;
+
+  TVoicePipelineMessage = procedure(Sender: TObject; const AMsg: string) of object;
 
   { TYutaniVoicePipeline - microphone -> Vosk STT -> (your logic) ->
     Piper TTS -> MiniAudio playback + mouth amplitude. }
@@ -137,9 +132,7 @@ type
       (Piper/SAPI) keep working; a broken microphone or MiniAudio failure
       still raises. TTS problems degrade to SAPI (OnFallback). Both False
       raises - use the pipeline only when at least one side is wanted. }
-    procedure Setup(const AVoskModelDir, APiperModelPath, APiperTokensPath,
-      AEspeakDataDir: string; ATtsEnabled: Boolean = True;
-      ASttEnabled: Boolean = True);
+    procedure Setup(const AVoskModelDir, APiperModelPath, APiperTokensPath, AEspeakDataDir: string; ATtsEnabled: Boolean = True; ASttEnabled: Boolean = True);
 
     { Makes the avatar say something. Thread-safe. }
     procedure Say(const AText: string);
@@ -186,8 +179,7 @@ type
   end;
 
   { The capture callback handed to miniaudio. pUserData is the pipeline. }
-procedure YutaniCaptureCallback(pDevice: Pointer; pOutput: Pointer;
-  pInput: Pointer; frameCount: Cardinal); cdecl;
+procedure YutaniCaptureCallback(pDevice: Pointer; pOutput: Pointer; pInput: Pointer; frameCount: Cardinal); cdecl;
 
 implementation
 
@@ -215,8 +207,7 @@ end;
 { Capture callback (runs on the miniaudio device thread!)                      }
 {------------------------------------------------------------------------------}
 
-procedure YutaniCaptureCallback(pDevice: Pointer; pOutput: Pointer;
-  pInput: Pointer; frameCount: Cardinal); cdecl;
+procedure YutaniCaptureCallback(pDevice: Pointer; pOutput: Pointer; pInput: Pointer; frameCount: Cardinal); cdecl;
 var
   Pipeline: TYutaniVoicePipeline;
 begin
@@ -278,8 +269,7 @@ begin
   inherited;
 end;
 
-procedure TYutaniVoicePipeline.Setup(const AVoskModelDir, APiperModelPath,
-  APiperTokensPath, AEspeakDataDir: string; ATtsEnabled, ASttEnabled: Boolean);
+procedure TYutaniVoicePipeline.Setup(const AVoskModelDir, APiperModelPath, APiperTokensPath, AEspeakDataDir: string; ATtsEnabled, ASttEnabled: Boolean);
 var
   EngineSize: NativeUInt;
   DeviceSize: NativeUInt;
@@ -302,14 +292,12 @@ begin
       // keep working, the host reads the reason from OnFallback instead.
       if not FStt.Active then
       begin
-        HandleFallback(Self, Format('Vosk model could not be loaded from "%s": %s',
-          [AVoskModelDir, FStt.LastError]));
+        HandleFallback(Self, Format('Vosk model could not be loaded from "%s": %s', [AVoskModelDir, FStt.LastError]));
         FreeAndNil(FStt);
       end;
     end
     else
-      HandleFallback(Self, Format('Vosk model directory not found: "%s" - running without speech recognition',
-        [AVoskModelDir]));
+      HandleFallback(Self, Format('Vosk model directory not found: "%s" - running without speech recognition', [AVoskModelDir]));
   end
   else
     HandleFallback(Self, 'STT disabled by toggle - recognizer not loaded.');
@@ -351,8 +339,7 @@ begin
     begin
       FreeMem(FDevice);
       FDevice := nil;
-      HandleFallback(Self, Format('ma_device_init(capture) failed: %d - ' +
-        'is a microphone connected? Running without STT.', [HR]));
+      HandleFallback(Self, Format('ma_device_init(capture) failed: %d - ' + 'is a microphone connected? Running without STT.', [HR]));
     end
     else
     begin
@@ -360,8 +347,7 @@ begin
 
       HR := ma_device_start(FDevice);
       if HR <> MA_SUCCESS then
-        HandleFallback(Self, Format('ma_device_start(capture) failed: %d - ' +
-          'running without STT.', [HR]));
+        HandleFallback(Self, Format('ma_device_start(capture) failed: %d - ' + 'running without STT.', [HR]));
     end;
   end
   else
@@ -408,11 +394,9 @@ begin
     "logged 'speaking' but silent" case diagnosable - UsePiper = EngineKind
     = tekSherpaPiper means the piper voice is REALLY rendering. }
   if FTts.EngineKind = tekSherpaPiper then
-    HandleFallback(Self, Format('Piper TTS active (sherpa-onnx v%s): %s',
-      [SherpaTtsLibraryVersion, APiperModelPath]))
+    HandleFallback(Self, Format('Piper TTS active (sherpa-onnx v%s): %s', [SherpaTtsLibraryVersion, APiperModelPath]))
   else
-    HandleFallback(Self, Format('TTS on SAPI fallback (EngineKind=%d): %s',
-      [Ord(FTts.EngineKind), SherpaTtsLibraryStatus]));
+    HandleFallback(Self, Format('TTS on SAPI fallback (EngineKind=%d): %s', [Ord(FTts.EngineKind), SherpaTtsLibraryStatus]));
   FTts.AttachEngine(FEngine);
   { WASAPI playback diagnosis (engine thread, right after the attach): engine
     volume and the permanent voice sound's is_playing state go to OnFallback
@@ -422,8 +406,7 @@ begin
     driver session is dead and the log says so. SAPI mode has no sound. }
   if FTts.EngineKind = tekSherpaPiper then
   begin
-    HandleFallback(Self, Format('Playback check: engine volume %.2f, voice sound playing=%d',
-      [ma_engine_get_volume(FEngine), Integer(ma_sound_is_playing(FTts.Sound))]));
+    HandleFallback(Self, Format('Playback check: engine volume %.2f, voice sound playing=%d', [ma_engine_get_volume(FEngine), Integer(ma_sound_is_playing(FTts.Sound))]));
     if ma_sound_is_playing(FTts.Sound) = 0 then
     begin
       HandleFallback(Self, 'Voice sound not playing - running %TEMP% WAV probe through ma_engine_play_sound.');
@@ -435,15 +418,13 @@ begin
   end;
 end;
 
-procedure TYutaniVoicePipeline.HandlePartial(Sender: TObject;
-  const AText: string);
+procedure TYutaniVoicePipeline.HandlePartial(Sender: TObject; const AText: string);
 begin
   if Assigned(FOnHeard) then
     FOnHeard(Self, AText, False);
 end;
 
-procedure TYutaniVoicePipeline.HandleFinal(Sender: TObject;
-  const AText: string);
+procedure TYutaniVoicePipeline.HandleFinal(Sender: TObject; const AText: string);
 begin
   { Mic-Lip-Sync (VTuber/OBS) mode: the microphone is only the mouth
     animation source - recognized text never reaches the dialog logic, so
@@ -459,8 +440,7 @@ begin
     Say('Du hast gesagt: ' + AText);
 end;
 
-procedure TYutaniVoicePipeline.HandleTtsStart(Sender: TObject;
-  const AText: string);
+procedure TYutaniVoicePipeline.HandleTtsStart(Sender: TObject; const AText: string);
 begin
   { Anti-echo: mute the recognizer while the avatar speaks so it does not
     transcribe its own voice through the microphone. }
@@ -470,8 +450,7 @@ begin
     FOnTtsStart(Self, AText);
 end;
 
-procedure TYutaniVoicePipeline.HandleTtsEnd(Sender: TObject;
-  const AText: string);
+procedure TYutaniVoicePipeline.HandleTtsEnd(Sender: TObject; const AText: string);
 begin
   { Anti-echo release: un-mute and let the recognizer pick up the user
     again; SetMuted already reset any half-utterance buffered on mute. }
@@ -481,15 +460,13 @@ begin
     FOnTtsEnd(Self, AText);
 end;
 
-procedure TYutaniVoicePipeline.HandleTtsError(Sender: TObject;
-  const AMsg: string);
+procedure TYutaniVoicePipeline.HandleTtsError(Sender: TObject; const AMsg: string);
 begin
   if Assigned(FOnError) then
     FOnError(Self, AMsg);
 end;
 
-procedure TYutaniVoicePipeline.HandleFallback(Sender: TObject;
-  const AMsg: string);
+procedure TYutaniVoicePipeline.HandleFallback(Sender: TObject; const AMsg: string);
 begin
   if Assigned(FOnFallback) then
     FOnFallback(Self, AMsg);
@@ -503,7 +480,7 @@ function TYutaniVoicePipeline.RunWavProbe: Boolean;
   AND driver session actually render samples. }
 const
   PROBE_RATE = 22050;   // piper-typical rate: no mix format renegotiation
-  PROBE_LEN  = 440;     // ~20 ms of 440 Hz sine beep
+  PROBE_LEN = 440;     // ~20 ms of 440 Hz sine beep
 var
   TempWav: string;
   WavPathA: AnsiString;
@@ -512,6 +489,7 @@ var
   Sample: SmallInt;
 
   { little-endian 32-bit write helper: WriteBuffer(@value, 4) on a local }
+
   procedure W32(const V: Integer);
   begin
     FS.WriteBuffer(V, 4);
@@ -541,8 +519,7 @@ begin
   Result := False;
   if FEngine = nil then
     Exit;
-  TempWav := IncludeTrailingPathDelimiter(
-    GetEnvironmentVariable('TEMP')) + 'yutani_probe.wav';
+  TempWav := IncludeTrailingPathDelimiter(GetEnvironmentVariable('TEMP')) + 'yutani_probe.wav';
   try
     FS := TFileStream.Create(TempWav, fmCreate);
     try
@@ -672,3 +649,4 @@ initialization
   YutaniActivePipeline := nil;
 
 end.
+

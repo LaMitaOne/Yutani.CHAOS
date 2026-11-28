@@ -27,8 +27,7 @@ interface
 uses
   System.SysUtils, System.Types, System.Classes, System.Math, System.UITypes,
   System.SyncObjs, System.Diagnostics, // TStopwatch: cross-platform QPC wrapper
-  FMX.Types, FMX.Controls, FMX.Skia,
-  System.Skia
+  FMX.Types, FMX.Controls, FMX.Skia, System.Skia
   {$IFDEF MSWINDOWS}
     , Winapi.MMSystem // timeBeginPeriod / timeEndPeriod
   {$ENDIF};
@@ -88,7 +87,7 @@ type
       while the scene is busy (speech, morph, animation) and drops to
       IdleTargetFPS after IdleTimeoutSec seconds of silence, saving GPU/CPU
       on a quiet desktop overlay. NotifyActivity resets the idle timer. }
-    FAdaptiveFPS: Boolean;
+      FAdaptiveFPS: Boolean;
     FActiveTargetFPS: Integer;
     FIdleTargetFPS: Integer;
     FIdleTimeoutSec: Double;
@@ -186,7 +185,8 @@ procedure THighResTimer.HybridWaitUntil(const ATargetTicks, ASpinNanoseconds: In
 var
   SpinTicks, Remaining: Int64;
 begin
-  if Frequency = 0 then Exit;
+  if Frequency = 0 then
+    Exit;
   SpinTicks := (ASpinNanoseconds * Frequency) div 1000000000;
 
   Remaining := ATargetTicks - GetTicks;
@@ -195,7 +195,8 @@ begin
     Sleep(1);
     Remaining := ATargetTicks - GetTicks;
   end;
-  while GetTicks < ATargetTicks do ;
+  while GetTicks < ATargetTicks do
+    ;
 end;
 
 {==============================================================================
@@ -252,7 +253,8 @@ end;
 
 procedure TSkiaCustomThreadedBase.StartThread;
 begin
-  if FThreadActive then Exit;
+  if FThreadActive then
+    Exit;
   FThreadActive := True;
 
   FThread := TThread.CreateAnonymousThread(
@@ -294,12 +296,12 @@ begin
             DeltaSec := 1 / 60;
 
           // 1. UPDATE LOGIC (with real measured delta time)
-          if not FPaused then
+              if not FPaused then
             UpdateLogic(DeltaSec);
 
           // 2. RENDER TO OFFSCREEN BUFFER (The Magic Part)
           // We check if we have a size to avoid errors
-          if (Self.Width > 0) and (Self.Height > 0) then
+              if (Self.Width > 0) and (Self.Height > 0) then
           begin
             // Create a temporary raster surface in memory.
             // This is safe to do in a background thread.
@@ -353,7 +355,7 @@ begin
             NextFrame := NowTicks + FrameTicks;
 
           // Hybrid wait: Sleep for the bulk, spin the last ~2ms exactly.
-          Timer.HybridWaitUntil(NextFrame, SPIN_THRESHOLD_NS);
+              Timer.HybridWaitUntil(NextFrame, SPIN_THRESHOLD_NS);
         end;
       finally
         FThreadActive := False;
@@ -369,7 +371,8 @@ end;
 
 procedure TSkiaCustomThreadedBase.StopThread;
 begin
-  if not Assigned(FThread) then Exit;
+  if not Assigned(FThread) then
+    Exit;
 
   FThread.Terminate;
   // Wait for the render thread to finish: the loop checks CheckTerminated
@@ -382,7 +385,8 @@ end;
 
 procedure TSkiaCustomThreadedBase.ThreadSafeInvalidate;
 begin
-  if csDestroying in ComponentState then Exit;
+  if csDestroying in ComponentState then
+    Exit;
   TThread.Queue(nil,
     procedure
     begin
@@ -653,3 +657,4 @@ begin
 end;
 
 end.
+

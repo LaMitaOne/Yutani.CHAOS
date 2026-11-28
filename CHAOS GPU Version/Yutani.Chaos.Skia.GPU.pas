@@ -31,8 +31,6 @@ unit Yutani.Chaos.Skia.GPU;
  *  auto-save on exit, and startup session continuation via last.ini.
  *==============================================================================}
 
-
-
 interface
 
 uses
@@ -41,8 +39,7 @@ uses
   System.IOUtils, System.Generics.Collections, FMX.Types, FMX.Controls,
   FMX.Graphics, FMX.Forms, FMX.Platform.Win, FMX.Skia, System.Skia,
   uSkiaCustomThreadedBase, uSkiaAliveHighlighter, Yutani.MeshLoader,
-  Yutani.PhotoTo3D, Yutani.AI.Client, Yutani.Audio.Pipeline,
-  Yutani.GPUInfo;
+  Yutani.PhotoTo3D, Yutani.AI.Client, Yutani.Audio.Pipeline, Yutani.GPUInfo;
 
 const
   CHAOS_WIDTH = 236;
@@ -178,10 +175,10 @@ type
     dwFlags: Cardinal;
     szDevice: array[0..31] of WideChar;
   end;
+
   PMonitorInfoEx = ^TMonitorInfoEx;
 
-  TMonitorEnumProc = function(hMonitor: THandle; hdcMonitor: HDC;
-    lprcMonitor: PRect; dwData: NativeInt): LongBool; stdcall;
+  TMonitorEnumProc = function(hMonitor: THandle; hdcMonitor: HDC; lprcMonitor: PRect; dwData: NativeInt): LongBool; stdcall;
 
   PFNGLSHADERSOURCEPROC = procedure(shader: Cardinal; count: Integer; str: PPAnsiChar; len: PInteger); stdcall;
 
@@ -696,8 +693,7 @@ type
     procedure SetupVoicePipeline(const AVoskModelDir, APiperVoice: string);
     { Piper sidecar resolution: tokens.txt / espeak-ng-data / lexicon.txt
       beside the onnx, then beside its parent folder (nested voice layout). }
-    procedure ResolvePiperSidecars(const AOnnxPath, AOnnxFolder: string;
-      out ATokens, AEspeak, ALexicon: string);
+    procedure ResolvePiperSidecars(const AOnnxPath, AOnnxFolder: string; out ATokens, AEspeak, ALexicon: string);
     function FindFirstOnnxInFolder(const AFolder: string): string;
     { First .onnx directly in the folder or one subfolder level deeper. }
     function FindFirstOnnxNested(const AFolder: string): string;
@@ -1267,8 +1263,7 @@ const
     // touchGlow / touchRippleGlow the per-style brightness additions.
     // All-zero (cursor outside, uMouseLocal parked at -9999, or falling
     // particles) is exactly neutral: every consumer reads 0.
-    '  float touchInfluence = 0.0;'#10 + '  float touchDist = 0.0;'#10 + '  vec2  touchDir = vec2(0.0, 1.0);'#10 +
-    '  float touchGlow = 0.0;'#10 + '  float touchRippleGlow = 0.0;'#10 +
+    '  float touchInfluence = 0.0;'#10 + '  float touchDist = 0.0;'#10 + '  vec2  touchDir = vec2(0.0, 1.0);'#10 + '  float touchGlow = 0.0;'#10 + '  float touchRippleGlow = 0.0;'#10 +
     // State machine: 0 = forming (reveal up to build scanline), 2 = fading (drop below despawn scanline).
     '  if (uState == 0) { if (tgt.y > uBuildScanY) visible = false; } else if (uState == 2) { if (pos.y <= uDespawnScanY) { if (vel.y < 1.0) vel.y = 240.0 + 140.0 * rand(float(idx)); falling = true; } }'#10 +
     // Falling: gravity carries the particle down and out of the viewport.
@@ -1314,8 +1309,7 @@ const
     // brightness / colour in the splat section below via
     // touchInfluence / touchGlow, which fade smoothly back to neutral
     // as the cursor moves away.
-    '        }'#10 + '      }'#10 + '    }'#10 + '    touchGlow = (uTouchEffectStyle == 1) ? touchInfluence : 0.0;'#10 +
-    '    vel += (d * stiff - vel * damp) * dt;'#10 + '    pos += vel * dt;'#10 + '    if (uState == 1) {'#10 + '      vec3 hover = vec3(sin(uTime * 1.3 + float(idx) * 0.37),'#10 + '                        cos(uTime * 1.1 + float(idx) * 0.53), 0.0) * 0.4;'#10 + '      pos += hover * dt;'#10 + '    }'#10 + '    pos += vec3(rand(float(idx) + uTime) - 0.5,'#10 +
+    '        }'#10 + '      }'#10 + '    }'#10 + '    touchGlow = (uTouchEffectStyle == 1) ? touchInfluence : 0.0;'#10 + '    vel += (d * stiff - vel * damp) * dt;'#10 + '    pos += vel * dt;'#10 + '    if (uState == 1) {'#10 + '      vec3 hover = vec3(sin(uTime * 1.3 + float(idx) * 0.37),'#10 + '                        cos(uTime * 1.1 + float(idx) * 0.53), 0.0) * 0.4;'#10 + '      pos += hover * dt;'#10 + '    }'#10 + '    pos += vec3(rand(float(idx) + uTime) - 0.5,'#10 +
     '                rand(float(idx) * 1.7 + uTime) - 0.5,'#10 + '                rand(float(idx) * 2.3 + uTime) - 0.5) * uJitter;'#10 + '    if (uHoloStyle == 2) {'#10 + '      pos += vec3(rand(float(idx) * 0.5 + uTime * 0.7) - 0.5,'#10 + '                  rand(float(idx) * 0.9 + uTime * 0.5) - 0.5, 0.0) * 0.9;'#10 + '    }'#10 + '  }'#10 +
     // Write back position and velocity.
     '  P[idx].px = pos.x; P[idx].py = pos.y; P[idx].pz = pos.z;'#10 + '  P[idx].vx = vel.x; P[idx].vy = vel.y; P[idx].vz = vel.z;'#10 + '  if (!visible) return;'#10 + ''#10 +
@@ -1779,8 +1773,7 @@ begin
       Exit;
     AVoskModelDirBefore := FActiveVoskModelDir;
     APiperVoiceBefore := FActivePiperVoice;
-    AppendDebugLog(Format('Voice pipeline re-activation: vosk "%s" -> "%s", piper "%s" -> "%s" (rebuilding)',
-      [AVoskModelDirBefore, AVoskModelDir, APiperVoiceBefore, APiperVoice]));
+    AppendDebugLog(Format('Voice pipeline re-activation: vosk "%s" -> "%s", piper "%s" -> "%s" (rebuilding)', [AVoskModelDirBefore, AVoskModelDir, APiperVoiceBefore, APiperVoice]));
     try
       FreeAndNil(FVoicePipeline);
     except
@@ -1839,8 +1832,7 @@ begin
   else
     AppendDebugLog('Voice pipeline setup: no Vosk model dir (STT off)');
   if PiperModel <> '' then
-    AppendDebugLog(Format('Voice pipeline setup: piper voice "%s" (tokens: %d, espeak-ng-data: %d, lexicon: %d)',
-      [PiperModel, Ord(PiperTokens <> ''), Ord(PiperEspeak <> ''), Ord(PiperLexicon <> '')]))
+    AppendDebugLog(Format('Voice pipeline setup: piper voice "%s" (tokens: %d, espeak-ng-data: %d, lexicon: %d)', [PiperModel, Ord(PiperTokens <> ''), Ord(PiperEspeak <> ''), Ord(PiperLexicon <> '')]))
   else if APiperVoice <> '' then
     AppendDebugLog(Format('Voice pipeline setup: no .onnx found under "%s" - SAPI fallback', [APiperVoice]))
   else
@@ -1856,8 +1848,7 @@ begin
     { The split toggles flow straight through: TTS-only builds engine + TTS
       (no capture device, no libvosk), STT-only builds capture + Vosk and
       answers arrive as text + gestures. }
-    FVoicePipeline.Setup(AVoskModelDir, PiperModel, PiperTokens, PiperEspeak,
-      FVoiceTtsEnabled, FVoiceSttEnabled);
+    FVoicePipeline.Setup(AVoskModelDir, PiperModel, PiperTokens, PiperEspeak, FVoiceTtsEnabled, FVoiceSttEnabled);
     { Setup survived: report which engine combination went live (Vosk status
       comes from the pipeline's own events - the OnFallback handler logs a
       missing model / DLL - so here the success side is all we know). }
@@ -1891,12 +1882,12 @@ begin
   end;
 end;
 
-procedure TSkChaos.ResolvePiperSidecars(const AOnnxPath, AOnnxFolder: string;
-  out ATokens, AEspeak, ALexicon: string);
+procedure TSkChaos.ResolvePiperSidecars(const AOnnxPath, AOnnxFolder: string; out ATokens, AEspeak, ALexicon: string);
 var
   Base, Cand: string;
 
   { tokens.txt / espeak-ng-data / lexicon.txt in Base, else ''. }
+
   procedure CheckBase;
   begin
     Cand := TPath.Combine(Base, 'tokens.txt');
@@ -2127,8 +2118,7 @@ begin
       if (I - Start) > 1 then
       begin
         TagLower := LowerCase(Copy(Result, Start + 1, I - Start - 1));
-        if (TagLower = 'neutral') or (TagLower = 'nod') or (TagLower = 'shake')
-          or (TagLower = 'tilt') or (TagLower = 'think') or (TagLower = 'alert') then
+        if (TagLower = 'neutral') or (TagLower = 'nod') or (TagLower = 'shake') or (TagLower = 'tilt') or (TagLower = 'think') or (TagLower = 'alert') then
         begin
           if ARemoved <> '' then
             ARemoved := ARemoved + ', ';
@@ -2271,7 +2261,6 @@ begin
     FMouthOpen := EnsureRange(FMouthAutoTarget, 0.0, 1.0);
 end;
 
-
 procedure TSkChaos.LoadDepthMap(const AFileName: string);
 begin
   FreeAndNil(FDepthMap);
@@ -2387,8 +2376,7 @@ begin
     FGpuCaps := DetectGPUCapabilities(True);
     FGpuInfoText := FormatGpuInfoText(FGpuCaps);
     FGpuRecommendedParticles := FGpuCaps.RecommendedParticles;
-    AppendDebugLog(Format('GPU detected: %s (tier %s, compute score %.2f ms)',
-      [FGpuCaps.Renderer, TGpuTierNames[FGpuCaps.Tier], FGpuCaps.ComputeScoreMS]));
+    AppendDebugLog(Format('GPU detected: %s (tier %s, compute score %.2f ms)', [FGpuCaps.Renderer, TGpuTierNames[FGpuCaps.Tier], FGpuCaps.ComputeScoreMS]));
   except
     on E: Exception do
     begin
@@ -2739,70 +2727,70 @@ begin
       shared CPU particle buffer and count. }
     FDataLock.Enter;
     try
-    DepthW := FDepthMap.Width;
-    DepthH := FDepthMap.Height;
-    BudgetUsed := 0;
-    CenterX := DepthW / 2;
-    CenterY := (DepthH - 28) / 2;
-    FMinY := 10000;
-    FMaxY := -10000;
+      DepthW := FDepthMap.Width;
+      DepthH := FDepthMap.Height;
+      BudgetUsed := 0;
+      CenterX := DepthW / 2;
+      CenterY := (DepthH - 28) / 2;
+      FMinY := 10000;
+      FMaxY := -10000;
     { Every depth-map face pixel is a region-1 (head) particle, so the head
       bounding box is the face's own extent - tracked below alongside FMinY /
       FMaxY and finalized before returning. }
-    FHeadMinX := 10000;
-    FHeadMaxX := -10000;
-    FHeadMinY := 10000;
-    FHeadMaxY := -10000;
-    FHeadMinZ := 10000;
-    FHeadMaxZ := -10000;
-    Step := DEPTH_MAP_STEP;
-    OffsetY := 28;
-    for Y := OffsetY to DepthH - 1 do
-    begin
-      if ((Y - OffsetY) mod Step) <> 0 then
-        Continue;
-      for X := 0 to DepthW - 1 do
+      FHeadMinX := 10000;
+      FHeadMaxX := -10000;
+      FHeadMinY := 10000;
+      FHeadMaxY := -10000;
+      FHeadMinZ := 10000;
+      FHeadMaxZ := -10000;
+      Step := DEPTH_MAP_STEP;
+      OffsetY := 28;
+      for Y := OffsetY to DepthH - 1 do
       begin
-        if (X mod Step) <> 0 then
+        if ((Y - OffsetY) mod Step) <> 0 then
           Continue;
-        PixelColor := GetPixel(X, Y);
-        R := (PixelColor shr 16) and $FF;
-        if R > 5 then
+        for X := 0 to DepthW - 1 do
         begin
-          Helligkeit := R / 255.0;
-          AddParticle(1, (X - CenterX) * FScaleFactor, ((Y - OffsetY) - CenterY) * FScaleFactor, Helligkeit * 112.5);
-          if P.PY < FMinY then
-            FMinY := P.PY;
-          if P.PY > FMaxY then
-            FMaxY := P.PY;
+          if (X mod Step) <> 0 then
+            Continue;
+          PixelColor := GetPixel(X, Y);
+          R := (PixelColor shr 16) and $FF;
+          if R > 5 then
+          begin
+            Helligkeit := R / 255.0;
+            AddParticle(1, (X - CenterX) * FScaleFactor, ((Y - OffsetY) - CenterY) * FScaleFactor, Helligkeit * 112.5);
+            if P.PY < FMinY then
+              FMinY := P.PY;
+            if P.PY > FMaxY then
+              FMaxY := P.PY;
           { Face pixels ARE the head region here, so they expand the head
             bounding box on all three axes (Z is the depth-from-brightness). }
-          if P.PX < FHeadMinX then
-            FHeadMinX := P.PX;
-          if P.PX > FHeadMaxX then
-            FHeadMaxX := P.PX;
-          if P.PY < FHeadMinY then
-            FHeadMinY := P.PY;
-          if P.PY > FHeadMaxY then
-            FHeadMaxY := P.PY;
-          if P.PZ < FHeadMinZ then
-            FHeadMinZ := P.PZ;
-          if P.PZ > FHeadMaxZ then
-            FHeadMaxZ := P.PZ;
+            if P.PX < FHeadMinX then
+              FHeadMinX := P.PX;
+            if P.PX > FHeadMaxX then
+              FHeadMaxX := P.PX;
+            if P.PY < FHeadMinY then
+              FHeadMinY := P.PY;
+            if P.PY > FHeadMaxY then
+              FHeadMaxY := P.PY;
+            if P.PZ < FHeadMinZ then
+              FHeadMinZ := P.PZ;
+            if P.PZ > FHeadMaxZ then
+              FHeadMaxZ := P.PZ;
+          end;
         end;
       end;
-    end;
-    for Idx := 0 to 49 do
-      AddParticle(2, (-45 + Cos((Idx / 50) * 2 * Pi) * 22), (-50 + Sin((Idx / 50) * 2 * Pi) * 8), 40.0);
-    for Idx := 0 to 49 do
-      AddParticle(3, (45 + Cos((Idx / 50) * 2 * Pi) * 22), (-50 + Sin((Idx / 50) * 2 * Pi) * 8), 40.0);
-    for Idx := 0 to 39 do
-      AddParticle(4, Cos((Idx / 40) * 2 * Pi) * 35, (65 + Sin((Idx / 40) * 2 * Pi) * 4), 35.0);
-    FPivotY := FMinY + (FMaxY - FMinY) * FNeckPivotRatio;
+      for Idx := 0 to 49 do
+        AddParticle(2, (-45 + Cos((Idx / 50) * 2 * Pi) * 22), (-50 + Sin((Idx / 50) * 2 * Pi) * 8), 40.0);
+      for Idx := 0 to 49 do
+        AddParticle(3, (45 + Cos((Idx / 50) * 2 * Pi) * 22), (-50 + Sin((Idx / 50) * 2 * Pi) * 8), 40.0);
+      for Idx := 0 to 39 do
+        AddParticle(4, Cos((Idx / 40) * 2 * Pi) * 35, (65 + Sin((Idx / 40) * 2 * Pi) * 4), 35.0);
+      FPivotY := FMinY + (FMaxY - FMinY) * FNeckPivotRatio;
     { Fold the face extent into the head center / size frame before the
       ornament rings (regions 2-4) below only add non-head particles. }
-    FinalizeHeadBounds;
-    FParticleCount := BudgetUsed;
+      FinalizeHeadBounds;
+      FParticleCount := BudgetUsed;
     finally
       FDataLock.Leave;
     end;
@@ -3029,7 +3017,7 @@ var
     NewLocal* are the buffer-space cursor coordinates for the force
     field's velocity estimate. }
   CurValid: Boolean;
-  Local: TPointF;
+  local: TPointF;
   IdleTarget: Single;
   IdleHeadX, IdleHeadY: Single;
   NewLocalX, NewLocalY: Single;
@@ -3163,8 +3151,8 @@ begin
   CurValid := GetCursorPos(Cur);
   if CurValid then
   begin
-    Local.X := Cur.X - FScreenOrigin.X;
-    Local.Y := Cur.Y - FScreenOrigin.Y;
+    local.X := Cur.X - FScreenOrigin.X;
+    local.Y := Cur.Y - FScreenOrigin.Y;
   end;
   if CurValid then
   begin
@@ -3301,10 +3289,10 @@ begin
     re-entering cursor starts from a calm field. TouchEffectsEnabled =
     False takes the same outside path unconditionally - no velocity
     tracking, no per-frame state updates, the shader branch never fires. }
-  if FTouchEffectsEnabled and (not FDragging) and CurValid and (Local.X >= 0) and (Local.Y >= 0) and (Local.X < FControlW) and (Local.Y < FControlH) then
+  if FTouchEffectsEnabled and (not FDragging) and CurValid and (local.X >= 0) and (local.Y >= 0) and (local.X < FControlW) and (local.Y < FControlH) then
   begin
-    NewLocalX := Local.X * (FBufW / Max(FControlW, 1));
-    NewLocalY := Local.Y * (FBufH / Max(FControlH, 1));
+    NewLocalX := local.X * (FBufW / Max(FControlW, 1));
+    NewLocalY := local.Y * (FBufH / Max(FControlH, 1));
     if FMouseInside then
     begin
       FMouseVelX := FMouseVelX * 0.85 + (NewLocalX - FMouseLocalX) / Max(DeltaTime, 0.001) * 0.15;
@@ -3344,8 +3332,7 @@ begin
     if CurValid and (FControlW > 0) then
     begin
       TopLeft := PointF(FScreenOrigin.X, FScreenOrigin.Y);
-      Hover := (Cur.X >= TopLeft.X) and (Cur.X <= TopLeft.X + FControlW) and
-               (Cur.Y >= TopLeft.Y) and (Cur.Y <= TopLeft.Y + FControlH);
+      Hover := (Cur.X >= TopLeft.X) and (Cur.X <= TopLeft.X + FControlW) and (Cur.Y >= TopLeft.Y) and (Cur.Y <= TopLeft.Y + FControlH);
     end;
     if Hover then
       TargetMul := AUTO_DIM_ALPHA
@@ -3559,109 +3546,109 @@ begin
     interleave with a dispatch reading a half-written cloud. }
   FDataLock.Enter;
   try
-  BudgetUsed := 0;
-  FMinY := 10000;
-  FMaxY := -10000;
+    BudgetUsed := 0;
+    FMinY := 10000;
+    FMaxY := -10000;
   { Head bounding box starts empty; only bpHead particles expand it below. }
-  FHeadMinX := 10000;
-  FHeadMaxX := -10000;
-  FHeadMinY := 10000;
-  FHeadMaxY := -10000;
-  FHeadMinZ := 10000;
-  FHeadMaxZ := -10000;
-  for I := 0 to High(APoints) do
-  begin
-    if BudgetUsed >= Integer(FParticleBudget) then
-      Break;
-    P := @FParticleCPU[BudgetUsed * SSBO_PARTICLE_SIZE];
-    FillChar(P^, SSBO_PARTICLE_SIZE, 0);
-    Pos := APoints[I].Position;
-    P^.PX := Pos.X;
-    P^.PY := Pos.Y;
-    P^.PZ := Pos.Z;
-    P^.TX := Pos.X;
-    P^.TY := Pos.Y;
-    P^.TZ := Pos.Z;
+    FHeadMinX := 10000;
+    FHeadMaxX := -10000;
+    FHeadMinY := 10000;
+    FHeadMaxY := -10000;
+    FHeadMinZ := 10000;
+    FHeadMaxZ := -10000;
+    for I := 0 to High(APoints) do
+    begin
+      if BudgetUsed >= Integer(FParticleBudget) then
+        Break;
+      P := @FParticleCPU[BudgetUsed * SSBO_PARTICLE_SIZE];
+      FillChar(P^, SSBO_PARTICLE_SIZE, 0);
+      Pos := APoints[I].Position;
+      P^.PX := Pos.X;
+      P^.PY := Pos.Y;
+      P^.PZ := Pos.Z;
+      P^.TX := Pos.X;
+      P^.TY := Pos.Y;
+      P^.TZ := Pos.Z;
     { A white colour means the source had no real tint (mesh body); use the
       face colour. Photo / hybrid particles carry their true RGB instead.
       A per-part override set through SetPartColor wins over both and is
       written with the $FE alpha marker the holo shader detects, so it
       survives rebuilds (InnerCore toggle, budget retune, reloads). }
-    if (APoints[I].GroupTag < Cardinal(Length(FPartColors))) and (Cardinal(FPartColors[APoints[I].GroupTag]) <> $00000000) then
-      P^.Color := (Cardinal(FPartColors[APoints[I].GroupTag]) and $00FFFFFF) or $FE000000
-    else if APoints[I].Color = $FFFFFFFF then
-      P^.Color := FFaceColor
-    else
-      P^.Color := APoints[I].Color;
+      if (APoints[I].GroupTag < Cardinal(Length(FPartColors))) and (Cardinal(FPartColors[APoints[I].GroupTag]) <> $00000000) then
+        P^.Color := (Cardinal(FPartColors[APoints[I].GroupTag]) and $00FFFFFF) or $FE000000
+      else if APoints[I].Color = $FFFFFFFF then
+        P^.Color := FFaceColor
+      else
+        P^.Color := APoints[I].Color;
     { Body-region id in the low nibble drives contour / circuit placement. }
-    case APoints[I].BodyPart of
-      bpHead:
+      case APoints[I].BodyPart of
+        bpHead:
+          Region := 1;
+        bpNeck, bpTorso:
+          Region := 2;
+        bpUpperArmLeft, bpUpperArmRight, bpLowerArmLeft, bpLowerArmRight, bpHandLeft, bpHandRight:
+          Region := 3;
+        bpUpperLegLeft, bpUpperLegRight, bpLowerLegLeft, bpLowerLegRight, bpFootLeft, bpFootRight:
+          Region := 4;
+      else
         Region := 1;
-      bpNeck, bpTorso:
-        Region := 2;
-      bpUpperArmLeft, bpUpperArmRight, bpLowerArmLeft, bpLowerArmRight, bpHandLeft, bpHandRight:
-        Region := 3;
-      bpUpperLegLeft, bpUpperLegRight, bpLowerLegLeft, bpLowerLegRight, bpFootLeft, bpFootRight:
-        Region := 4;
-    else
-      Region := 1;
-    end;
-    IsHead := APoints[I].BodyPart = bpHead;
+      end;
+      IsHead := APoints[I].BodyPart = bpHead;
     { Eye meshes get PARTICLE_FLAG_EYE so the holo shader can dim them on
       blink. A custom eye part (chosen in the controls panel) wins over the
       automatic name heuristic: exactly the part whose GroupTag maps to
       FCustomEyePartName carries the flag. Only the mesh source maps
       GroupTag -> MeshNames; hybrid / photo points carry no usable name
       mapping, so they stay untagged. }
-    if (FSourceType = srcMesh) and (APoints[I].GroupTag < Cardinal(Length(FMeshResult.MeshNames))) then
-    begin
-      if UseCustomEye then
-        IsEyePart := MatchesEyePartName(FMeshResult.MeshNames[APoints[I].GroupTag])
+      if (FSourceType = srcMesh) and (APoints[I].GroupTag < Cardinal(Length(FMeshResult.MeshNames))) then
+      begin
+        if UseCustomEye then
+          IsEyePart := MatchesEyePartName(FMeshResult.MeshNames[APoints[I].GroupTag])
+        else
+          IsEyePart := IsEyeMeshName(FMeshResult.MeshNames[APoints[I].GroupTag]);
+      end
       else
-        IsEyePart := IsEyeMeshName(FMeshResult.MeshNames[APoints[I].GroupTag]);
-    end
-    else
-      IsEyePart := False;
+        IsEyePart := False;
     { Expand the head bounding box while walking the points - the mouth
       deformation in the shader needs the head-local coordinate frame. }
-    if IsHead then
-    begin
-      if Pos.X < FHeadMinX then
-        FHeadMinX := Pos.X;
-      if Pos.X > FHeadMaxX then
-        FHeadMaxX := Pos.X;
-      if Pos.Y < FHeadMinY then
-        FHeadMinY := Pos.Y;
-      if Pos.Y > FHeadMaxY then
-        FHeadMaxY := Pos.Y;
-      if Pos.Z < FHeadMinZ then
-        FHeadMinZ := Pos.Z;
-      if Pos.Z > FHeadMaxZ then
-        FHeadMaxZ := Pos.Z;
-    end;
+      if IsHead then
+      begin
+        if Pos.X < FHeadMinX then
+          FHeadMinX := Pos.X;
+        if Pos.X > FHeadMaxX then
+          FHeadMaxX := Pos.X;
+        if Pos.Y < FHeadMinY then
+          FHeadMinY := Pos.Y;
+        if Pos.Y > FHeadMaxY then
+          FHeadMaxY := Pos.Y;
+        if Pos.Z < FHeadMinZ then
+          FHeadMinZ := Pos.Z;
+        if Pos.Z > FHeadMaxZ then
+          FHeadMaxZ := Pos.Z;
+      end;
     { Every third head particle becomes an inner brain-core point so the
       volumetric style forms a pulsating inner layer (~33 %). }
-    MakeInner := FInnerCore and IsHead and ((I mod 3) = 0);
-    P^.Flags := Region;
-    if MakeInner then
-      P^.Flags := P^.Flags or PARTICLE_FLAG_INNER_CORE;
-    if IsEyePart then
-      P^.Flags := P^.Flags or PARTICLE_FLAG_EYE;
+      MakeInner := FInnerCore and IsHead and ((I mod 3) = 0);
+      P^.Flags := Region;
+      if MakeInner then
+        P^.Flags := P^.Flags or PARTICLE_FLAG_INNER_CORE;
+      if IsEyePart then
+        P^.Flags := P^.Flags or PARTICLE_FLAG_EYE;
     { Pack the surface normal into the pad fields for the rim-light shader. }
-    P^.Pad0 := Cardinal(ClampNormal16(APoints[I].Normal.X)) or (Cardinal(ClampNormal16(APoints[I].Normal.Y)) shl 16);
-    P^.Pad1 := Cardinal(ClampNormal16(APoints[I].Normal.Z));
-    if P^.TY < FMinY then
-      FMinY := P^.TY;
-    if P^.TY > FMaxY then
-      FMaxY := P^.TY;
-    Inc(BudgetUsed);
-  end;
+      P^.Pad0 := Cardinal(ClampNormal16(APoints[I].Normal.X)) or (Cardinal(ClampNormal16(APoints[I].Normal.Y)) shl 16);
+      P^.Pad1 := Cardinal(ClampNormal16(APoints[I].Normal.Z));
+      if P^.TY < FMinY then
+        FMinY := P^.TY;
+      if P^.TY > FMaxY then
+        FMaxY := P^.TY;
+      Inc(BudgetUsed);
+    end;
   { Neck pivot: 1/3 down from the top of the target Y range so the head
     rotates toward the cursor while the shoulders stay put. }
-  FPivotY := FMinY + (FMaxY - FMinY) * FNeckPivotRatio;
+    FPivotY := FMinY + (FMaxY - FMinY) * FNeckPivotRatio;
   { Fold the head min/max into the center / size uniforms frame before the
     inner-core emission below places its points around the head centre. }
-  FinalizeHeadBounds;
+    FinalizeHeadBounds;
   { Custom inner core / brain mesh: emitted after the outer cloud so the
     shell keeps its own budget, and capped by the remaining PARTICLE_MAX
     room. Each point is scaled around the head centre (FInnerCoreOffsetY
@@ -3670,43 +3657,43 @@ begin
     colour through the $FE marker so the core reads in its own colour in
     every style. Inner points are interior to the head, so they never
     expand the bounds or the scanline range. }
-  if FInnerCore and (Length(FInnerMeshResult.Points) > 0) then
-  begin
+    if FInnerCore and (Length(FInnerMeshResult.Points) > 0) then
+    begin
     { Remember where the custom core slice starts and how many points it
       has: UpdateInnerCoreTargets rewrites exactly this range on scale /
       offset changes instead of rebuilding the whole cloud. }
-    FInnerCoreStartIdx := BudgetUsed;
-    InnerCap := Min(Integer(FInnerCoreBudget), PARTICLE_MAX - BudgetUsed);
-    for I := 0 to High(FInnerMeshResult.Points) do
-    begin
-      if InnerCap <= 0 then
-        Break;
-      P := @FParticleCPU[BudgetUsed * SSBO_PARTICLE_SIZE];
-      FillChar(P^, SSBO_PARTICLE_SIZE, 0);
-      Pos := TPoint3D.Create(FInnerMeshResult.Points[I].Position.X * FInnerCoreScale + FHeadCenter.X, FInnerMeshResult.Points[I].Position.Y * FInnerCoreScale + FHeadCenter.Y + FInnerCoreOffsetY, FInnerMeshResult.Points[I].Position.Z * FInnerCoreScale + FHeadCenter.Z);
-      P^.PX := Pos.X;
-      P^.PY := Pos.Y;
-      P^.PZ := Pos.Z;
-      P^.TX := Pos.X;
-      P^.TY := Pos.Y;
-      P^.TZ := Pos.Z;
-      if (FInnerMeshResult.Points[I].GroupTag < Cardinal(Length(FInnerPartColors))) and (Cardinal(FInnerPartColors[FInnerMeshResult.Points[I].GroupTag]) <> $00000000) then
-        P^.Color := (Cardinal(FInnerPartColors[FInnerMeshResult.Points[I].GroupTag]) and $00FFFFFF) or $FE000000
-      else
-        P^.Color := (Cardinal(FAccentColor) and $00FFFFFF) or $FE000000;
-      P^.Flags := 1 or PARTICLE_FLAG_INNER_CORE;
+      FInnerCoreStartIdx := BudgetUsed;
+      InnerCap := Min(Integer(FInnerCoreBudget), PARTICLE_MAX - BudgetUsed);
+      for I := 0 to High(FInnerMeshResult.Points) do
+      begin
+        if InnerCap <= 0 then
+          Break;
+        P := @FParticleCPU[BudgetUsed * SSBO_PARTICLE_SIZE];
+        FillChar(P^, SSBO_PARTICLE_SIZE, 0);
+        Pos := TPoint3D.Create(FInnerMeshResult.Points[I].Position.X * FInnerCoreScale + FHeadCenter.X, FInnerMeshResult.Points[I].Position.Y * FInnerCoreScale + FHeadCenter.Y + FInnerCoreOffsetY, FInnerMeshResult.Points[I].Position.Z * FInnerCoreScale + FHeadCenter.Z);
+        P^.PX := Pos.X;
+        P^.PY := Pos.Y;
+        P^.PZ := Pos.Z;
+        P^.TX := Pos.X;
+        P^.TY := Pos.Y;
+        P^.TZ := Pos.Z;
+        if (FInnerMeshResult.Points[I].GroupTag < Cardinal(Length(FInnerPartColors))) and (Cardinal(FInnerPartColors[FInnerMeshResult.Points[I].GroupTag]) <> $00000000) then
+          P^.Color := (Cardinal(FInnerPartColors[FInnerMeshResult.Points[I].GroupTag]) and $00FFFFFF) or $FE000000
+        else
+          P^.Color := (Cardinal(FAccentColor) and $00FFFFFF) or $FE000000;
+        P^.Flags := 1 or PARTICLE_FLAG_INNER_CORE;
       { Pack the core surface normal so rim light and solid-style shading
         keep working on the inner layer. }
-      P^.Pad0 := Cardinal(ClampNormal16(FInnerMeshResult.Points[I].Normal.X)) or (Cardinal(ClampNormal16(FInnerMeshResult.Points[I].Normal.Y)) shl 16);
-      P^.Pad1 := Cardinal(ClampNormal16(FInnerMeshResult.Points[I].Normal.Z));
-      Inc(BudgetUsed);
-      Dec(InnerCap);
-    end;
-    FInnerCoreCount := BudgetUsed - FInnerCoreStartIdx;
-  end
-  else
-    FInnerCoreCount := 0;
-  FParticleCount := BudgetUsed;
+        P^.Pad0 := Cardinal(ClampNormal16(FInnerMeshResult.Points[I].Normal.X)) or (Cardinal(ClampNormal16(FInnerMeshResult.Points[I].Normal.Y)) shl 16);
+        P^.Pad1 := Cardinal(ClampNormal16(FInnerMeshResult.Points[I].Normal.Z));
+        Inc(BudgetUsed);
+        Dec(InnerCap);
+      end;
+      FInnerCoreCount := BudgetUsed - FInnerCoreStartIdx;
+    end
+    else
+      FInnerCoreCount := 0;
+    FParticleCount := BudgetUsed;
   finally
     FDataLock.Leave;
   end;
@@ -4470,8 +4457,7 @@ begin
     mesh points, no emitted slice, or an out-of-range marker (stale after
     a budget change rebuild) fall back to doing nothing; the regular
     rebuild paths still place the core correctly in those cases. }
-  if (Length(FInnerMeshResult.Points) = 0) or (not FInnerCore) or
-     (FInnerCoreCount <= 0) or (FInnerCoreStartIdx < 0) then
+  if (Length(FInnerMeshResult.Points) = 0) or (not FInnerCore) or (FInnerCoreCount <= 0) or (FInnerCoreStartIdx < 0) then
     Exit;
   if FInnerCoreStartIdx + FInnerCoreCount > Length(FParticleCPU) then
     Exit;
@@ -4672,8 +4658,7 @@ begin
     still walking out (ssExiting keeps FActive True until ResetToIdle).
     An idle entity plus inactive mouse-follow lets the overlay skip its
     per-frame work completely. }
-  Result := Assigned(FHighlighter) and
-    (FHighlighter.Active or FHighlightFollowMouse);
+  Result := Assigned(FHighlighter) and (FHighlighter.Active or FHighlightFollowMouse);
 end;
 
 procedure TSkChaos.SetHighlighterBounds(AWidth, AHeight: Single);
@@ -4807,8 +4792,8 @@ end;
   pattern as the GL entry points above - declared here, resolved by the
   Windows loader, no extra uses entry needed. SetWindowPos and its
   SWP_* flags come from Winapi.Windows (already in uses). }
-function EnumDisplayMonitors(hdc: HDC; lprcClip: PRect;
-  lpfnEnum: TMonitorEnumProc; dwData: NativeInt): LongBool; stdcall; external user32 name 'EnumDisplayMonitors';
+function EnumDisplayMonitors(hdc: hdc; lprcClip: PRect; lpfnEnum: TMonitorEnumProc; dwData: NativeInt): LongBool; stdcall; external user32 name 'EnumDisplayMonitors';
+
 function GetMonitorInfoW(hMonitor: THandle; lpmi: PMonitorInfoEx): LongBool; stdcall; external user32 name 'GetMonitorInfoW';
 
 { Fills one TChaosDisplayInfo slot from the MONITORINFOEX the callback
@@ -4832,8 +4817,7 @@ end;
   so borrowing Self without locking is safe. BOOL/stdcall signature with
   PRect (NOT LPRECT - that type name is not FMX-safe in older Delphi
   versions) matches the WinAPI MONITORENUMPROC contract exactly. }
-function ChaosEnumDisplaysProc(hMonitor: THandle; hdcMonitor: HDC;
-  lprcMonitor: PRect; dwData: NativeInt): BOOL; stdcall;
+function ChaosEnumDisplaysProc(hMonitor: THandle; hdcMonitor: hdc; lprcMonitor: PRect; dwData: NativeInt): BOOL; stdcall;
 var
   Info: TMonitorInfoEx;
 begin
@@ -4945,10 +4929,8 @@ begin
         focus with the panel the user clicked. Physical pixels flow
         untouched from MONITORINFO into SetWindowPos, so no scale factor
         is ever applied twice. }
-  SetWindowPos(Wnd, 0, R.Left, R.Top, 0, 0,
-    SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
-  SetWindowPos(Wnd, 0, R.Left, R.Top, R.Width, R.Height,
-    SWP_NOZORDER or SWP_NOACTIVATE);
+  SetWindowPos(Wnd, 0, R.Left, R.Top, 0, 0, SWP_NOSIZE or SWP_NOZORDER or SWP_NOACTIVATE);
+  SetWindowPos(Wnd, 0, R.Left, R.Top, R.Width, R.Height, SWP_NOZORDER or SWP_NOACTIVATE);
   { SetWindowPos dispatches its WM_SIZE / WM_DPICHANGED synchronously,
     so the form metrics are already final here: re-anchor the avatar at
     the captured fractions of the new client area (bottom-right stays
@@ -5221,9 +5203,7 @@ begin
   { Exact match first, then substring in either direction: the combo lists
     the loader's own mesh names, but a preset saved for a differently
     renamed export (Eyes vs. LeftEye_Mesh.001) should still resolve. }
-  Result := SameText(APartName, Custom) or
-            APartName.ToLower.Contains(Custom.ToLower) or
-            Custom.ToLower.Contains(APartName.ToLower);
+  Result := SameText(APartName, Custom) or APartName.ToLower.Contains(Custom.ToLower) or Custom.ToLower.Contains(APartName.ToLower);
 end;
 
 function TSkChaos.GetLastPresetIndexPath: string;
@@ -5525,8 +5505,7 @@ begin
         tray menu pick these up via SyncControlsFromChaos after load.
         TouchEffectsEnabled reads the legacy MouseForceField key when the
         new one is absent so old presets keep working. }
-      TouchEffectsEnabled := Ini.ReadBool('Face', 'TouchEffectsEnabled',
-        Ini.ReadBool('Face', 'MouseForceField', FTouchEffectsEnabled));
+      TouchEffectsEnabled := Ini.ReadBool('Face', 'TouchEffectsEnabled', Ini.ReadBool('Face', 'MouseForceField', FTouchEffectsEnabled));
       I := Ini.ReadInteger('Face', 'TouchEffectStyle', Ord(FTouchEffectStyle));
       if (I >= Ord(Low(TChaosTouchEffectStyle))) and (I <= Ord(High(TChaosTouchEffectStyle))) then
         TouchEffectStyle := TChaosTouchEffectStyle(I);
@@ -5571,10 +5550,8 @@ begin
         the coupled VoiceEnabled master map to both sides); the panel applies
         the detailed paths (models / endpoint / prompt) through its own AI
         section and re-activates the pipeline via ActivatePendingVoice. }
-      FVoiceTtsEnabled := Ini.ReadBool('AI', 'TtsEnabled',
-        Ini.ReadBool('AI', 'VoiceEnabled', False));
-      FVoiceSttEnabled := Ini.ReadBool('AI', 'SttEnabled',
-        Ini.ReadBool('AI', 'VoiceEnabled', False));
+      FVoiceTtsEnabled := Ini.ReadBool('AI', 'TtsEnabled', Ini.ReadBool('AI', 'VoiceEnabled', False));
+      FVoiceSttEnabled := Ini.ReadBool('AI', 'SttEnabled', Ini.ReadBool('AI', 'VoiceEnabled', False));
 
       if Parent is TControl then
         ClampIntoParent(X, Y)

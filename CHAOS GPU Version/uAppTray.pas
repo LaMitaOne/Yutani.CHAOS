@@ -61,6 +61,7 @@ const
   IDM_STAYONTOP = 1015;
   IDM_CLICKTHROUGH = 1016;
   IDM_DRAGMODE = 1017;
+  IDM_AUTODIM = 1018;
   { Dynamic "Send to Screen" entries: IDM_MONITOR_BASE + display index.
     2000 leaves ample room above the fixed 10xx commands. }
   IDM_MONITOR_BASE = 2000;
@@ -199,6 +200,7 @@ begin
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.StayOnTop), IDM_STAYONTOP, PChar('Stay on top'));
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.ClickThrough), IDM_CLICKTHROUGH, PChar('Click-through'));
   AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.DragMode), IDM_DRAGMODE, PChar('Draggable'));
+  AppendMenuW(hXMenu, MF_STRING or MenuCheck(Assigned(GChaos) and GChaos.AutoDimOnHover), IDM_AUTODIM, PChar('Auto-dim'));
   { Send to Screen submenu: built live on every right-click, so a beamer
     plugged in since the last click appears immediately. MF_CHECKED marks
     the monitor the overlay window currently sits on. hMon is only
@@ -216,11 +218,9 @@ begin
     begin
       Info := GChaos.DisplayInfo(I);
       if Info.Primary then
-        AppendMenuW(hMon, MF_STRING or MenuCheck(I = CurMon), IDM_MONITOR_BASE + I,
-          PChar(Format('Monitor %d (%dx%d - Primary)', [I + 1, Info.Bounds.Width, Info.Bounds.Height])))
+        AppendMenuW(hMon, MF_STRING or MenuCheck(I = CurMon), IDM_MONITOR_BASE + I, PChar(Format('Monitor %d (%dx%d - Primary)', [I + 1, Info.Bounds.Width, Info.Bounds.Height])))
       else
-        AppendMenuW(hMon, MF_STRING or MenuCheck(I = CurMon), IDM_MONITOR_BASE + I,
-          PChar(Format('Monitor %d (%dx%d)', [I + 1, Info.Bounds.Width, Info.Bounds.Height])));
+        AppendMenuW(hMon, MF_STRING or MenuCheck(I = CurMon), IDM_MONITOR_BASE + I, PChar(Format('Monitor %d (%dx%d)', [I + 1, Info.Bounds.Width, Info.Bounds.Height])));
     end;
     AppendMenuW(hXMenu, MF_POPUP or MF_STRING, hMon, PChar('Send to Screen'));
   end;
@@ -290,9 +290,13 @@ begin
     IDM_DRAGMODE:
       if Assigned(GChaos) then
         GChaos.DragMode := not GChaos.DragMode;
+    IDM_AUTODIM:
+      if Assigned(GChaos) then
+        GChaos.AutoDimOnHover := not GChaos.AutoDimOnHover;
+
     { Exit plays the despawn animation first, then quits once it completes
       (see TSkChaos.QuitAfterDespawn / the csFading state machine). }
-    IDM_EXIT:
+      IDM_EXIT:
       if Assigned(GChaos) then
         GChaos.QuitAfterDespawn
       else

@@ -59,20 +59,19 @@ const
 var
   GShuttingDown: Boolean = False;
 
-function YutaniTopmostHookProc(Wnd: HWND; Msg: UINT; WParam: WPARAM;
-  LParam: LPARAM): LRESULT; stdcall;
+function YutaniTopmostHookProc(Wnd: HWND; Msg: UINT; WParam: WParam; LParam: LParam): LRESULT; stdcall;
 var
   OrigProc: FARPROC;
   PPos: ^TWindowPos;
 begin
- if GShuttingDown or (Msg = WM_DESTROY) or (Msg = WM_NCDESTROY) then
+  if GShuttingDown or (Msg = WM_DESTROY) or (Msg = WM_NCDESTROY) then
   begin
-  OrigProc := Pointer(GetPropW(Wnd, YUTANI_ORIGPROC_PROP));
-  if OrigProc <> nil then
-    Result := CallWindowProc(OrigProc, Wnd, Msg, WParam, LParam)
-  else
-    Result := DefWindowProc(Wnd, Msg, WParam, LParam);
-  Exit;
+    OrigProc := Pointer(GetPropW(Wnd, YUTANI_ORIGPROC_PROP));
+    if OrigProc <> nil then
+      Result := CallWindowProc(OrigProc, Wnd, Msg, WParam, LParam)
+    else
+      Result := DefWindowProc(Wnd, Msg, WParam, LParam);
+    Exit;
   end;
 
   OrigProc := FARPROC(GetPropW(Wnd, YUTANI_ORIGPROC_PROP));
@@ -91,8 +90,7 @@ begin
         end;
       WM_DISPLAYCHANGE, WM_ACTIVATEAPP:
         begin
-          SetWindowPos(Wnd, HWND_TOPMOST, 0, 0, 0, 0,
-            SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
+          SetWindowPos(Wnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE or SWP_NOSIZE or SWP_NOACTIVATE);
         end;
     end;
   end;
@@ -197,7 +195,7 @@ end;
 procedure TForm1.FormDestroy(Sender: TObject);
 begin
   GShuttingDown := True;
-   GChaos := nil;
+  GChaos := nil;
   RemoveTopmostHook;
   { Restore the original wndproc before the form frees the HWND so the
     subclass never fires on a half-torn-down window. }
@@ -240,3 +238,4 @@ begin
 end;
 
 end.
+

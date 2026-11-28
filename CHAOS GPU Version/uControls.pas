@@ -34,9 +34,8 @@ interface
 
 uses
   System.SysUtils, System.Types, System.UITypes, System.Classes, System.Variants,
-  System.IniFiles, System.IOUtils,
-  System.Math, System.Generics.Collections, Winapi.Windows, Winapi.ShellAPI,
-  FMX.Types, FMX.Controls, FMX.Forms,
+  System.IniFiles, System.IOUtils, System.Math, System.Generics.Collections,
+  Winapi.Windows, Winapi.ShellAPI, FMX.Types, FMX.Controls, FMX.Forms,
   FMX.Graphics, FMX.Dialogs, FMX.StdCtrls, FMX.ListBox, FMX.Colors, FMX.Layouts,
   FMX.TabControl, FMX.Menus, FMX.Edit, FMX.Memo, FMX.Platform, FMX.Clipboard,
   Yutani.Chaos.Skia.GPU, Yutani.MeshLoader;
@@ -191,8 +190,7 @@ type
     FLoadingAiSettings: Boolean;
     { Adds a full model path to a combo + its parallel array (displaying the
       short name), selecting it; returns True when the entry was new. }
-    function SelectModelEntry(ACombo: TComboBox; APaths: TStringList;
-      const AFullPath: string): Boolean;
+    function SelectModelEntry(ACombo: TComboBox; APaths: TStringList; const AFullPath: string): Boolean;
     { Model path for the combo's current selection ('' when none). }
     function PathForComboIndex(ACombo: TComboBox; APaths: TStringList): string;
     function GetAiIniPath: string;
@@ -220,15 +218,13 @@ type
     procedure OnAskSend(Sender: TObject);
     { Enter in FAskEdit fires the send: the main vkReturn key routes
       straight into OnAskSend. }
-    procedure OnAskKeyDown(Sender: TObject; var Key: Word; var KeyChar: Char;
-      Shift: TShiftState);
+    procedure OnAskKeyDown(Sender: TObject; var Key: Word; var KeyChar: Char; Shift: TShiftState);
     procedure OnTestTts(Sender: TObject);
     procedure OnAiSettingChange(Sender: TObject);
     { Key-level net for the endpoint edits: OnTyping does NOT fire on FMX
       for clipboard pastes (Ctrl+V / right-click insert), so every key-up
       (including Ctrl on paste) lands in ai.ini too. }
-    procedure OnAiKeyUp(Sender: TObject; var Key: Word; var KeyChar: Char;
-      Shift: TShiftState);
+    procedure OnAiKeyUp(Sender: TObject; var Key: Word; var KeyChar: Char; Shift: TShiftState);
     { Info / Debug tab handlers: apply the GPU-recommended particle budget
       onto the avatar + the System tab slider, copy / clear the log memo. }
     procedure OnApplyGpuBudget(Sender: TObject);
@@ -881,17 +877,17 @@ begin
     try
       FillModelCombos;
       LoadAiSettings;
-    TThread.CreateAnonymousThread(
-      procedure
-      begin
-        Sleep(2600);
-        TThread.Synchronize(nil,
-          procedure
-          begin
-            if (not Application.Terminated) and (Form2 <> nil) then
-              Form2.ApplyAiSettingsToChaos;
-          end);
-      end).Start;
+      TThread.CreateAnonymousThread(
+        procedure
+        begin
+          Sleep(2600);
+          TThread.Synchronize(nil,
+            procedure
+            begin
+              if (not Application.Terminated) and (Form2 <> nil) then
+                Form2.ApplyAiSettingsToChaos;
+            end);
+        end).Start;
     finally
       FLoadingAiSettings := False;
     end;
@@ -2012,7 +2008,7 @@ begin
     Exit;
   { Programmatic checkbox / trackbar updates must not fire their change
     handlers and write back into the properties they came from. }
-    FDragCheck.OnChange := OnCheckChange;
+  FDragCheck.OnChange := OnCheckChange;
   if Assigned(FAutoDimCheck) then
   begin
     FAutoDimCheck.OnChange := nil;
@@ -2138,6 +2134,7 @@ var
 
   { Programmatic track refresh without firing the change handler back into
     the property the value came from. }
+
   procedure SyncTrack(tb: TTrackBar; AValue: Single; const ALabel: string);
   begin
     if not Assigned(tb) then
@@ -2253,8 +2250,7 @@ begin
     cb.ItemIndex := 0;
 end;
 
-function TForm2.SelectModelEntry(ACombo: TComboBox; APaths: TStringList;
-  const AFullPath: string): Boolean;
+function TForm2.SelectModelEntry(ACombo: TComboBox; APaths: TStringList; const AFullPath: string): Boolean;
 begin
   { Adds AFullPath (combo shows the SHORT name, array keeps the full path)
   and selects it. Returns True when the entry was new. The combo items and
@@ -2352,11 +2348,8 @@ begin
         so TTS follows it alone (a former master=on + MicEnabled=off was a
         TTS-only setup and must stay that way), STT additionally required
         the old MicEnabled. }
-      FTtsEnableCheck.IsChecked := Ini.ReadBool('Voice', 'TtsEnabled',
-        Ini.ReadBool('Voice', 'Enabled', False));
-      FSttEnableCheck.IsChecked := Ini.ReadBool('Voice', 'SttEnabled',
-        Ini.ReadBool('Voice', 'Enabled', False) and
-        Ini.ReadBool('Voice', 'MicEnabled', True));
+      FTtsEnableCheck.IsChecked := Ini.ReadBool('Voice', 'TtsEnabled', Ini.ReadBool('Voice', 'Enabled', False));
+      FSttEnableCheck.IsChecked := Ini.ReadBool('Voice', 'SttEnabled', Ini.ReadBool('Voice', 'Enabled', False) and Ini.ReadBool('Voice', 'MicEnabled', True));
       FMicLipSyncCheck.IsChecked := Ini.ReadBool('Voice', 'MicLipSyncOnly', False);
       { Model folders: exact stored path wins when it still exists, otherwise
         the first scanned entry / empty. SelectModelEntry inserts the full
@@ -2372,13 +2365,7 @@ begin
       FApiKeyEdit.Text := Ini.ReadString('AI', 'ApiKey', '');
       { '\n' -> real line break: the INI stores the prompt with escaped
         breaks (see SaveAiSettings) so a multi-line prompt round-trips. }
-      FSystemPromptEdit.Text := StringReplace(
-        Ini.ReadString('AI', 'SystemPrompt',
-          'You are C.H.A.O.S., a dry, witty AI living inside a 3D particle hologram. ' +
-          'Start EVERY reply with exactly one gesture tag from [neutral], [nod], ' +
-          '[shake], [tilt], [think], [alert], followed by a concise spoken answer ' +
-          '(max 2 sentences, no markdown or emojis).'),
-        '\n', sLineBreak, [rfReplaceAll]);
+      FSystemPromptEdit.Text := StringReplace(Ini.ReadString('AI', 'SystemPrompt', 'You are C.H.A.O.S., a dry, witty AI living inside a 3D particle hologram. ' + 'Start EVERY reply with exactly one gesture tag from [neutral], [nod], ' + '[shake], [tilt], [think], [alert], followed by a concise spoken answer ' + '(max 2 sentences, no markdown or emojis).'), '\n', sLineBreak, [rfReplaceAll]);
       I := Ini.ReadInteger('AI', 'MaxHistory', 10);
       if Assigned(GChaos) and (GChaos.AIClient <> nil) then
         GChaos.AIClient.MaxHistoryMessages := I;
@@ -2392,8 +2379,7 @@ begin
       OnAiSettingChange. ApplyAiSettingsToChaos follows right after in
       FormCreate and covers the toggle / pipeline side. }
     if Assigned(GChaos) then
-      GChaos.EnsureAIClient(FBaseUrlEdit.Text, FModelEdit.Text,
-        FApiKeyEdit.Text, FSystemPromptEdit.Text);
+      GChaos.EnsureAIClient(FBaseUrlEdit.Text, FModelEdit.Text, FApiKeyEdit.Text, FSystemPromptEdit.Text);
   finally
     FLoadingAiSettings := False;
   end;
@@ -2429,8 +2415,7 @@ begin
       { TMemo keeps real line breaks; TMemIniFile.WriteString would put RAW
         CR/LF into the .ini and corrupt the file on the next read. Escape
         to a literal '\n' token (round-tripped in LoadAiSettings). }
-      Ini.WriteString('AI', 'SystemPrompt',
-        StringReplace(FSystemPromptEdit.Text, sLineBreak, '\n', [rfReplaceAll]));
+      Ini.WriteString('AI', 'SystemPrompt', StringReplace(FSystemPromptEdit.Text, sLineBreak, '\n', [rfReplaceAll]));
     Ini.UpdateFile;
   finally
     Ini.Free;
@@ -2608,8 +2593,7 @@ begin
   FAskEdit.Text := '';
 end;
 
-procedure TForm2.OnAskKeyDown(Sender: TObject; var Key: Word; var KeyChar: Char;
-  Shift: TShiftState);
+procedure TForm2.OnAskKeyDown(Sender: TObject; var Key: Word; var KeyChar: Char; Shift: TShiftState);
 begin
   { Enter sends the question; the key is consumed so no stray
     newline/whitespace lands in the single-line edit. Only vkReturn is
@@ -2649,8 +2633,7 @@ begin
     GChaos.EnsureAIClient(FBaseUrlEdit.Text, FModelEdit.Text, FApiKeyEdit.Text, FSystemPromptEdit.Text);
 end;
 
-procedure TForm2.OnAiKeyUp(Sender: TObject; var Key: Word; var KeyChar: Char;
-  Shift: TShiftState);
+procedure TForm2.OnAiKeyUp(Sender: TObject; var Key: Word; var KeyChar: Char; Shift: TShiftState);
 begin
   { Copy-paste net: FMX OnTyping does not fire for clipboard inserts, so
     the pasted value could sit in the edit for minutes without reaching

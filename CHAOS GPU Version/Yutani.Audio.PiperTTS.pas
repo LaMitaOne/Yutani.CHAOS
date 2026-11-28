@@ -56,52 +56,51 @@ unit Yutani.Audio.PiperTTS;
 interface
 
 uses
-  System.SysUtils, System.Classes, Winapi.Windows,
-  MiniAudio4Delphi;
+  System.SysUtils, System.Classes, Winapi.Windows, MiniAudio4Delphi;
 
 const
   SHERPA_LIB = 'sherpa-onnx-c-api.dll';
 
   // ---- miniaudio constants (see miniaudio.h) ----
-  MA_FORMAT_F32             = 5;    // ma_format_f32
-  MA_FORMAT_S16             = 2;    // ma_format_s16
-  MA_SUCCESS                = 0;
-  MA_INVALID_OPERATION      = -3;
-  MA_AT_END                 = -17;
-  MA_BUSY                   = -19;
-  MA_NOT_IMPLEMENTED        = -29;
-  MA_DEVICE_TYPE_CAPTURE    = 2;    // ma_device_type_capture
+  MA_FORMAT_F32 = 5;    // ma_format_f32
+  MA_FORMAT_S16 = 2;    // ma_format_s16
+  MA_SUCCESS = 0;
+  MA_INVALID_OPERATION = -3;
+  MA_AT_END = -17;
+  MA_BUSY = -19;
+  MA_NOT_IMPLEMENTED = -29;
+  MA_DEVICE_TYPE_CAPTURE = 2;    // ma_device_type_capture
 
   // ---- SAPI constants (see sapi.idl) ----
-  SPF_ASYNC                 = $0001;
-  SPF_PURGEBEFORESPEAK      = $0002;
-  SPRS_IS_SPEAKING          = $0002;  // SPVOICESTATUS.dwRunningState bit
+  SPF_ASYNC = $0001;
+  SPF_PURGEBEFORESPEAK = $0002;
+  SPRS_IS_SPEAKING = $0002;  // SPVOICESTATUS.dwRunningState bit
 
   // ---- sherpa-onnx struct sizes on Win64 (see sherpa-onnx c-api.h).
   // Compile-time checks below verify our Delphi records match; older DLLs
   // simply read less than we pass (caller struct may be larger than callee's).
-  SHERPA_VITS_CONFIG_SIZE        = 56;
-  SHERPA_MATCHA_CONFIG_SIZE      = 56;
-  SHERPA_KOKORO_CONFIG_SIZE      = 64;
-  SHERPA_KITTEN_CONFIG_SIZE      = 48;
-  SHERPA_ZIPVOICE_CONFIG_SIZE    = 64;
-  SHERPA_POCKET_CONFIG_SIZE      = 64;
-  SHERPA_SUPERTONIC_CONFIG_SIZE  = 56;
-  SHERPA_MODEL_CONFIG_SIZE       = 424;
+  SHERPA_VITS_CONFIG_SIZE = 56;
+  SHERPA_MATCHA_CONFIG_SIZE = 56;
+  SHERPA_KOKORO_CONFIG_SIZE = 64;
+  SHERPA_KITTEN_CONFIG_SIZE = 48;
+  SHERPA_ZIPVOICE_CONFIG_SIZE = 64;
+  SHERPA_POCKET_CONFIG_SIZE = 64;
+  SHERPA_SUPERTONIC_CONFIG_SIZE = 56;
+  SHERPA_MODEL_CONFIG_SIZE = 424;
   SHERPA_OFFLINE_TTS_CONFIG_SIZE = 456;
-  SHERPA_GENERATED_AUDIO_SIZE    = 16;
+  SHERPA_GENERATED_AUDIO_SIZE = 16;
 
   // Win64 size of ma_data_source_vtable / ma_data_source_base (miniaudio.h)
-  MA_DATA_SOURCE_VTABLE_SIZE     = 56;
-  MA_DATA_SOURCE_BASE_SIZE       = 72;
+  MA_DATA_SOURCE_VTABLE_SIZE = 56;
+  MA_DATA_SOURCE_BASE_SIZE = 72;
 
   // Default Piper voice parameters (sherpa-onnx piper examples)
-  PIPER_DEFAULT_NOISE_SCALE      = 0.667;
-  PIPER_DEFAULT_NOISE_SCALE_W    = 0.8;
-  PIPER_DEFAULT_LENGTH_SCALE     = 1.0;
-  PIPER_DEFAULT_NUM_THREADS      = 2;
-  PIPER_DEFAULT_MAX_SENTENCES    = 1;
-  PIPER_DEFAULT_SILENCE_SCALE    = 0.2;
+  PIPER_DEFAULT_NOISE_SCALE = 0.667;
+  PIPER_DEFAULT_NOISE_SCALE_W = 0.8;
+  PIPER_DEFAULT_LENGTH_SCALE = 1.0;
+  PIPER_DEFAULT_NUM_THREADS = 2;
+  PIPER_DEFAULT_MAX_SENTENCES = 1;
+  PIPER_DEFAULT_SILENCE_SCALE = 0.2;
 
 type
   // ============================================================================
@@ -200,6 +199,7 @@ type
   end;
 
   PSherpaOnnxOfflineTtsConfig = ^SherpaOnnxOfflineTtsConfig;
+
   SherpaOnnxOfflineTtsConfig = record
     model: SherpaOnnxOfflineTtsModelConfig;
     rule_fsts: PAnsiChar;       // optional comma-separated rule FST list
@@ -209,6 +209,7 @@ type
   end;
 
   PSherpaOnnxGeneratedAudio = ^SherpaOnnxGeneratedAudio;
+
   SherpaOnnxGeneratedAudio = record
     samples: PSingle;         // mono float32 samples in [-1, 1]
     n: Integer;               // number of samples
@@ -216,13 +217,16 @@ type
   end;
 
   // ---- sherpa-onnx entry point types (cdecl) ----
-  TSherpaCreateOfflineTtsProc = function(
-    const config: PSherpaOnnxOfflineTtsConfig): Pointer; cdecl;
+  TSherpaCreateOfflineTtsProc = function(const config: PSherpaOnnxOfflineTtsConfig): Pointer; cdecl;
+
   TSherpaDestroyOfflineTtsProc = procedure(tts: Pointer); cdecl;
+
   TSherpaOfflineTtsSampleRateProc = function(tts: Pointer): Integer; cdecl;
-  TSherpaOfflineTtsGenerateProc = function(tts: Pointer; text: PAnsiChar;
-    sid: Integer; speed: Single): PSherpaOnnxGeneratedAudio; cdecl;
+
+  TSherpaOfflineTtsGenerateProc = function(tts: Pointer; text: PAnsiChar; sid: Integer; speed: Single): PSherpaOnnxGeneratedAudio; cdecl;
+
   PSherpaOnnxGenerationConfig = ^SherpaOnnxGenerationConfig;
+
   SherpaOnnxGenerationConfig = record
     silence_scale: Single;
     speed: Single;
@@ -241,17 +245,13 @@ type
     tokens_num_sentences: Integer;
   end;
 
+  TSherpaOfflineTtsGenerateWithConfigProc = function(tts: Pointer; text: PAnsiChar; const config: PSherpaOnnxGenerationConfig; callback: Pointer; arg: Pointer): PSherpaOnnxGeneratedAudio; cdecl;
 
-  TSherpaOfflineTtsGenerateWithConfigProc = function(tts: Pointer; text: PAnsiChar;
-    const config: PSherpaOnnxGenerationConfig; callback: Pointer;
-    arg: Pointer): PSherpaOnnxGeneratedAudio; cdecl;
-
-
-  TSherpaDestroyOfflineTtsAudioProc = procedure(
-    audio: PSherpaOnnxGeneratedAudio); cdecl;
+  TSherpaDestroyOfflineTtsAudioProc = procedure(audio: PSherpaOnnxGeneratedAudio); cdecl;
   { Optional export since sherpa-onnx v1.9.x: returns the library's own
     version string (PAnsiChar, owned by the DLL - never freed by us). Used
     purely for diagnostics, so a missing export is not an error. }
+
   TSherpaGetVersionStrProc = function: PAnsiChar; cdecl;
 
   // ============================================================================
@@ -259,19 +259,17 @@ type
   // ma_data_source_vtable / ma_data_source_base, see miniaudio.h)
   // ============================================================================
 
-  TMaDataSourceReadProc = function(pDataSource: Pointer; pFramesOut: Pointer;
-    frameCount: UInt64; pFramesRead: PUInt64): Integer; cdecl;
-  TMaDataSourceSeekProc = function(pDataSource: Pointer;
-    frameIndex: UInt64): Integer; cdecl;
-  TMaDataSourceGetDataFormatProc = function(pDataSource: Pointer;
-    pFormat: PCardinal; pChannels: PCardinal; pSampleRate: PCardinal;
-    pChannelMap: Pointer; channelMapCap: NativeUInt): Integer; cdecl;
-  TMaDataSourceGetCursorProc = function(pDataSource: Pointer;
-    pCursor: PUInt64): Integer; cdecl;
-  TMaDataSourceGetLengthProc = function(pDataSource: Pointer;
-    pLength: PUInt64): Integer; cdecl;
-  TMaDataSourceSetLoopingProc = function(pDataSource: Pointer;
-    isLooping: Integer): Integer; cdecl;
+  TMaDataSourceReadProc = function(pDataSource: Pointer; pFramesOut: Pointer; frameCount: UInt64; pFramesRead: PUInt64): Integer; cdecl;
+
+  TMaDataSourceSeekProc = function(pDataSource: Pointer; frameIndex: UInt64): Integer; cdecl;
+
+  TMaDataSourceGetDataFormatProc = function(pDataSource: Pointer; pFormat: PCardinal; pChannels: PCardinal; pSampleRate: PCardinal; pChannelMap: Pointer; channelMapCap: NativeUInt): Integer; cdecl;
+
+  TMaDataSourceGetCursorProc = function(pDataSource: Pointer; pCursor: PUInt64): Integer; cdecl;
+
+  TMaDataSourceGetLengthProc = function(pDataSource: Pointer; pLength: PUInt64): Integer; cdecl;
+
+  TMaDataSourceSetLoopingProc = function(pDataSource: Pointer; isLooping: Integer): Integer; cdecl;
 
   TMaDataSourceVtable = record
     onRead: TMaDataSourceReadProc;
@@ -299,6 +297,7 @@ type
   // The data source object we hand to ma_sound_init_from_data_source.
   // Base MUST be the first field; Owner is our private app data.
   PYutaniTtsDataSource = ^TYutaniTtsDataSource;
+
   TYutaniTtsDataSource = record
     Base: TMaDataSourceBase;
     Owner: Pointer;                // TYutaniPiperTTS instance
@@ -309,9 +308,10 @@ type
   // ============================================================================
 
   TPiperNotifyEvent = procedure(Sender: TObject) of object;
+
   TPiperTextEvent = procedure(Sender: TObject; const AText: string) of object;
-  TPiperMessageEvent = procedure(Sender: TObject;
-    const AMsg: string) of object;
+
+  TPiperMessageEvent = procedure(Sender: TObject; const AMsg: string) of object;
 
   TTtsEngineKind = (tekUninitialized, tekSherpaPiper, tekSapi);
 
@@ -321,23 +321,35 @@ type
   TYutaniPiperTTS = class(TObject)
   private
     // ---- class-level sherpa DLL management (shared by all instances) ----
-    class var FModule: THandle;
-    class var FModuleLoaded: Boolean;
-    class var FModuleStatus: string;
+    class var
+      FModule: THandle;
+    class var
+      FModuleLoaded: Boolean;
+    class var
+      FModuleStatus: string;
     { Version reported by the loaded DLL (SherpaOnnxGetVersionStr) or
       'unknown (GetVersionStr not exported)' - diagnostics only. }
-    class var FLibraryVersion: string;
-    class var FModuleLock: TRTLCriticalSection;
+    class var
+      FLibraryVersion: string;
+    class var
+      FModuleLock: TRTLCriticalSection;
 
     // resolved sherpa entry points - protected so the worker thread class
     // (same unit) can call them directly
-    class var _SherpaCreateOfflineTts: TSherpaCreateOfflineTtsProc;
-    class var _SherpaDestroyOfflineTts: TSherpaDestroyOfflineTtsProc;
-    class var _SherpaOfflineTtsSampleRate: TSherpaOfflineTtsSampleRateProc; // optional export
-    class var _SherpaOfflineTtsGenerate: TSherpaOfflineTtsGenerateProc;
-    class var _SherpaOfflineTtsGenerateWithConfig: TSherpaOfflineTtsGenerateWithConfigProc;
-    class var _SherpaDestroyOfflineTtsAudio: TSherpaDestroyOfflineTtsAudioProc;
-    class var _SherpaGetVersionStr: TSherpaGetVersionStrProc; // optional export
+    class var
+      _SherpaCreateOfflineTts: TSherpaCreateOfflineTtsProc;
+    class var
+      _SherpaDestroyOfflineTts: TSherpaDestroyOfflineTtsProc;
+    class var
+      _SherpaOfflineTtsSampleRate: TSherpaOfflineTtsSampleRateProc; // optional export
+    class var
+      _SherpaOfflineTtsGenerate: TSherpaOfflineTtsGenerateProc;
+    class var
+      _SherpaOfflineTtsGenerateWithConfig: TSherpaOfflineTtsGenerateWithConfigProc;
+    class var
+      _SherpaDestroyOfflineTtsAudio: TSherpaDestroyOfflineTtsAudioProc;
+    class var
+      _SherpaGetVersionStr: TSherpaGetVersionStrProc; // optional export
 
     class constructor ClassCreate;
     class destructor ClassDestroy;
@@ -402,8 +414,7 @@ type
     // called by the worker thread (implementation section)
     procedure WorkerFireStart(const AText: string);
     procedure WorkerFireEnd(const AText: string);
-    procedure WorkerAppendSamples(const ASamples: PSingle; ACount: Integer;
-      ASampleRate: Integer);
+    procedure WorkerAppendSamples(const ASamples: PSingle; ACount: Integer; ASampleRate: Integer);
     procedure WorkerClearBuffer;
     function WorkerDrained: Boolean;
     procedure WorkerSetSpeaking(AValue: Boolean);
@@ -442,8 +453,7 @@ type
       files are missing (or creation fails), the instance switches to the
       SAPI fallback, fires OnFallback and returns False - Speak() works
       immediately either way. }
-    function SetupPiperVoice(const AModelPath, ATokensPath, AEspeakDataDir: string;
-      const ALexiconPath: string = ''; const ADictDir: string = ''): Boolean;
+    function SetupPiperVoice(const AModelPath, ATokensPath, AEspeakDataDir: string; const ALexiconPath: string = ''; const ADictDir: string = ''): Boolean;
 
     { Connects the MiniAudio engine and starts the permanent voice sound.
       Call from the thread that owns the engine, AFTER SetupPiperVoice.
@@ -521,25 +531,25 @@ uses
 
 const
   COINIT_APARTMENTTHREADED = $2;
-  CLSCTX_INPROC_SERVER     = $1;
+  CLSCTX_INPROC_SERVER = $1;
   // IID / CLSID from sapi.idl
-  IID_ISpVoice: TGUID     = '{6C44DF74-72B9-4992-A1EC-EF996E0422D4}';
-  CLSID_SpVoice: TGUID    = '{96749377-3391-11D2-9EE3-00C04F797396}';
+  IID_ISpVoice: TGUID = '{6C44DF74-72B9-4992-A1EC-EF996E0422D4}';
+  CLSID_SpVoice: TGUID = '{96749377-3391-11D2-9EE3-00C04F797396}';
 
 type
   // ---- SAPI procedure types (COM / stdcall). First parameter is the
   // interface pointer (thiscall-like 'this'), named pThis because 'Self'
   // is reserved in Delphi method scope.
-  TSapiSpeakProc = function(pThis: Pointer; pwcs: PWideChar;
-    flags: Cardinal; number: PCardinal): HResult; stdcall;
-  TSapiGetStatusProc = function(pThis: Pointer; status: Pointer;
-    bookmark: PPWideChar): HResult; stdcall;
-  TSapiSetRateProc = function(pThis: Pointer;
-    adjust: Integer): HResult; stdcall;
-  TSapiSetVolumeProc = function(pThis: Pointer;
-    volume: Word): HResult; stdcall;
-  TSapiWaitProc = function(pThis: Pointer;
-    msTimeout: Cardinal): HResult; stdcall;
+  TSapiSpeakProc = function(pThis: Pointer; pwcs: PWideChar; flags: Cardinal; number: PCardinal): HResult; stdcall;
+
+  TSapiGetStatusProc = function(pThis: Pointer; status: Pointer; bookmark: PPWideChar): HResult; stdcall;
+
+  TSapiSetRateProc = function(pThis: Pointer; adjust: Integer): HResult; stdcall;
+
+  TSapiSetVolumeProc = function(pThis: Pointer; volume: Word): HResult; stdcall;
+
+  TSapiWaitProc = function(pThis: Pointer; msTimeout: Cardinal): HResult; stdcall;
+
   TSapiReleaseProc = function(pThis: Pointer): Integer; stdcall;
 
   // SPVOICESTATUS (sapi.idl, natural alignment on Win64 -> 64 bytes)
@@ -597,21 +607,22 @@ type
     GetVolume: Pointer;
     WaitUntilDone: TSapiWaitProc;
   end;
+
   PSapiVoiceVtable = ^TSapiVoiceVtable;
 
   PSapiVoice = ^TSapiVoice;
+
   TSapiVoice = record
     lpVtbl: PSapiVoiceVtable;
   end;
 
 { ole32 / kernel32 imports for raw COM. Declared here (not via Winapi.Windows)
   so the unit also compiles with older Delphi versions that lack them. }
-function CoInitializeEx(pvReserved: Pointer; coInit: Cardinal): HResult; stdcall;
-  external 'ole32.dll' name 'CoInitializeEx';
+function CoInitializeEx(pvReserved: Pointer; coInit: Cardinal): HResult; stdcall; external 'ole32.dll' name 'CoInitializeEx';
+
 procedure CoUninitialize; stdcall; external 'ole32.dll' name 'CoUninitialize';
-function CoCreateInstance(clsid: PGUID; unkOuter: Pointer;
-  dwClsContext: Cardinal; iid: PGUID; out pv): HResult; stdcall;
-  external 'ole32.dll' name 'CoCreateInstance';
+
+function CoCreateInstance(clsid: PGUID; unkOuter: Pointer; dwClsContext: Cardinal; iid: PGUID; out pv): HResult; stdcall; external 'ole32.dll' name 'CoCreateInstance';
 
 {##############################################################################}
 {# Worker thread                                                              #}
@@ -675,8 +686,7 @@ begin
   end;
 
   Unk := nil;
-  HR := CoCreateInstance(@CLSID_SpVoice, nil, CLSCTX_INPROC_SERVER,
-    @IID_ISpVoice, Unk);
+  HR := CoCreateInstance(@CLSID_SpVoice, nil, CLSCTX_INPROC_SERVER, @IID_ISpVoice, Unk);
   if Failed(HR) or (Unk = nil) then
     raise Exception.CreateFmt('CoCreateInstance(SpVoice) failed: 0x%.8x', [Cardinal(HR)]);
 
@@ -701,8 +711,7 @@ var
 begin
   Voice := EnsureSapiVoice;
 
-  HR := Voice^.lpVtbl^.Speak(Voice, PWideChar(AText),
-    SPF_ASYNC or SPF_PURGEBEFORESPEAK, nil);
+  HR := Voice^.lpVtbl^.Speak(Voice, PWideChar(AText), SPF_ASYNC or SPF_PURGEBEFORESPEAK, nil);
   if Failed(HR) then
     raise Exception.CreateFmt('ISpVoice::Speak failed: 0x%.8x', [Cardinal(HR)]);
 
@@ -773,12 +782,10 @@ begin
       GenCfg.reference_text := PAnsiChar('');
       GenCfg.num_steps := 5;
       GenCfg.extra := PAnsiChar('');
-      Audio := TYutaniPiperTTS._SherpaOfflineTtsGenerateWithConfig(FOwner.FTts,
-        PAnsiChar(Utf8), @GenCfg, nil, nil);
+      Audio := TYutaniPiperTTS._SherpaOfflineTtsGenerateWithConfig(FOwner.FTts, PAnsiChar(Utf8), @GenCfg, nil, nil);
     end
     else
-      Audio := TYutaniPiperTTS._SherpaOfflineTtsGenerate(FOwner.FTts,
-        PAnsiChar(Utf8), FOwner.FSpeakerId, FOwner.FSpeed);
+      Audio := TYutaniPiperTTS._SherpaOfflineTtsGenerate(FOwner.FTts, PAnsiChar(Utf8), FOwner.FSpeakerId, FOwner.FSpeed);
   finally
     SetCurrentDir(OldDir);
   end;
@@ -817,7 +824,6 @@ begin
     Sleep(15);
   end;
 end;
-
 
 procedure TYutaniTtsWorkerThread.Execute;
 var
@@ -895,6 +901,7 @@ var
 
   { "EXE folder", "sherpa\ subfolder", "both" or "missing" for the
     diagnosis text above. }
+
   function DllLocationText(AInExe, AInSub: Boolean): string;
   begin
     if AInExe and AInSub then
@@ -924,18 +931,13 @@ begin
     // in sherpa\ while sherpa-onnx-c-api.dll sits in the EXE folder (or vice
     // versa) - Windows only resolves dependencies through ONE of those
     // search paths per LoadLibrary call.
-    SherpaInExe := FileExists(IncludeTrailingPathDelimiter(
-      ExtractFilePath(ParamStr(0))) + SHERPA_LIB);
-    SherpaInSub := FileExists(IncludeTrailingPathDelimiter(
-      ExtractFilePath(ParamStr(0))) + 'sherpa\' + SHERPA_LIB);
-    OnnxRtInExe := FileExists(IncludeTrailingPathDelimiter(
-      ExtractFilePath(ParamStr(0))) + 'onnxruntime.dll');
-    OnnxRtInSub := FileExists(IncludeTrailingPathDelimiter(
-      ExtractFilePath(ParamStr(0))) + 'sherpa\onnxruntime.dll');
+    SherpaInExe := FileExists(IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + SHERPA_LIB);
+    SherpaInSub := FileExists(IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + 'sherpa\' + SHERPA_LIB);
+    OnnxRtInExe := FileExists(IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + 'onnxruntime.dll');
+    OnnxRtInSub := FileExists(IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + 'sherpa\onnxruntime.dll');
     OldMode := SetErrorMode(SEM_FAILCRITICALERRORS);
     try
-      SetDllDirectoryW(PChar(IncludeTrailingPathDelimiter(
-        ExtractFilePath(ParamStr(0)) + 'sherpa')));
+      SetDllDirectoryW(PChar(IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0)) + 'sherpa')));
       try
         FModule := LoadLibraryA(SHERPA_LIB);
       finally
@@ -947,13 +949,7 @@ begin
 
     if FModule = 0 then
     begin
-      FModuleStatus := Format('"%s" not found (Win32 error %d). ' +
-        'Searched the EXE folder and the sherpa\ subfolder - place the ' +
-        'sherpa-onnx runtime DLL (and onnxruntime.dll) there. ' +
-        'Diagnosis: sherpa-onnx-c-api.dll %s, onnxruntime.dll %s.',
-        [SHERPA_LIB, GetLastError,
-         DllLocationText(SherpaInExe, SherpaInSub),
-         DllLocationText(OnnxRtInExe, OnnxRtInSub)]);
+      FModuleStatus := Format('"%s" not found (Win32 error %d). ' + 'Searched the EXE folder and the sherpa\ subfolder - place the ' + 'sherpa-onnx runtime DLL (and onnxruntime.dll) there. ' + 'Diagnosis: sherpa-onnx-c-api.dll %s, onnxruntime.dll %s.', [SHERPA_LIB, GetLastError, DllLocationText(SherpaInExe, SherpaInSub), DllLocationText(OnnxRtInExe, OnnxRtInSub)]);
       FModuleLoaded := True;
       Exit;
     end;
@@ -975,11 +971,9 @@ begin
     else
       HasGeneratedAudioExport := True;
 
-    if (@_SherpaCreateOfflineTts = nil) or (@_SherpaDestroyOfflineTts = nil) or
-       (@_SherpaOfflineTtsGenerate = nil) or (not HasGeneratedAudioExport) then
+    if (@_SherpaCreateOfflineTts = nil) or (@_SherpaDestroyOfflineTts = nil) or (@_SherpaOfflineTtsGenerate = nil) or (not HasGeneratedAudioExport) then
     begin
-      FModuleStatus := Format('"%s" does not export the required offline ' +
-        'TTS functions - wrong or too old DLL.', [SHERPA_LIB]);
+      FModuleStatus := Format('"%s" does not export the required offline ' + 'TTS functions - wrong or too old DLL.', [SHERPA_LIB]);
       FreeLibrary(FModule);
       FModule := 0;
       FModuleLoaded := True;
@@ -1026,8 +1020,7 @@ end;
 {# Custom ma_data_source callbacks (called from the MiniAudio mixer thread)    #}
 {##############################################################################}
 
-function TtsDsRead(pDS: Pointer; pFramesOut: Pointer; frameCount: UInt64;
-  pFramesRead: PUInt64): Integer; cdecl;
+function TtsDsRead(pDS: Pointer; pFramesOut: Pointer; frameCount: UInt64; pFramesRead: PUInt64): Integer; cdecl;
 { Feeds samples from the ring buffer. IMPORTANT: never reports the end of the
   stream - missing frames are delivered as silence so the permanent voice
   sound keeps playing (miniaudio treats "0 frames read" as end-of-stream and
@@ -1086,9 +1079,7 @@ begin
   Result := MA_NOT_IMPLEMENTED;
 end;
 
-function TtsDsGetDataFormat(pDS: Pointer; pFormat: PCardinal;
-  pChannels: PCardinal; pSampleRate: PCardinal; pChannelMap: Pointer;
-  channelMapCap: NativeUInt): Integer; cdecl;
+function TtsDsGetDataFormat(pDS: Pointer; pFormat: PCardinal; pChannels: PCardinal; pSampleRate: PCardinal; pChannelMap: Pointer; channelMapCap: NativeUInt): Integer; cdecl;
 var
   DS: PYutaniTtsDataSource;
   TTS: TYutaniPiperTTS;
@@ -1099,8 +1090,8 @@ begin
     pFormat^ := MA_FORMAT_F32;
   if pChannels <> nil then
     pChannels^ := 1; // mono
-  if pSampleRate <> nil
-    then pSampleRate^ := Cardinal(TTS.FDataSourceSampleRate);
+  if pSampleRate <> nil then
+    pSampleRate^ := Cardinal(TTS.FDataSourceSampleRate);
   if (pChannelMap <> nil) and (channelMapCap > 0) then
     PCardinal(pChannelMap)^ := 1; // MA_CHANNEL_MONO
   Result := MA_SUCCESS;
@@ -1287,8 +1278,7 @@ begin
     FAmplitude := FAmplitude + (Target - FAmplitude) * RELEASE;
 end;
 
-procedure TYutaniPiperTTS.WorkerAppendSamples(const ASamples: PSingle;
-  ACount: Integer; ASampleRate: Integer);
+procedure TYutaniPiperTTS.WorkerAppendSamples(const ASamples: PSingle; ACount: Integer; ASampleRate: Integer);
 { Worker thread: appends generated samples to the ring buffer, growing it as
   needed. Ring positions are derived from the absolute counters
   (FTotalAppended / FTotalRead), so reader and writer stay consistent without
@@ -1303,8 +1293,7 @@ begin
 
   if ASampleRate <> FDataSourceSampleRate then
   begin
-    DoError(Format('TTS sample rate %d does not match data source rate %d - ' +
-      'call SetupPiperVoice before AttachEngine.', [ASampleRate, FDataSourceSampleRate]));
+    DoError(Format('TTS sample rate %d does not match data source rate %d - ' + 'call SetupPiperVoice before AttachEngine.', [ASampleRate, FDataSourceSampleRate]));
     Exit;
   end;
 
@@ -1410,22 +1399,20 @@ begin
   end;
 end;
 
-function TYutaniPiperTTS.SetupPiperVoice(const AModelPath, ATokensPath,
-  AEspeakDataDir: string; const ALexiconPath, ADictDir: string): Boolean;
+function TYutaniPiperTTS.SetupPiperVoice(const AModelPath, ATokensPath, AEspeakDataDir: string; const ALexiconPath, ADictDir: string): Boolean;
 var
   Config: SherpaOnnxOfflineTtsConfig;
-  ModelBuf, LexiconBuf, TokensBuf, DataDirBuf, DictDirBuf,
-    RuleFstsBuf, ProviderBuf: AnsiString;
+  ModelBuf, LexiconBuf, TokensBuf, DataDirBuf, DictDirBuf, RuleFstsBuf, ProviderBuf: AnsiString;
   SampleRate: Integer;
   Reason: string;
-  FwdModelPath, FwdTokensPath, FwdEspeakDataDir, FwdLexiconPath,
-    FwdDictDir: string;
+  FwdModelPath, FwdTokensPath, FwdEspeakDataDir, FwdLexiconPath, FwdDictDir: string;
 
   { sherpa-onnx (onnxruntime file IO) prefers forward slashes: a plain
     'C:\models\voice.onnx' can fail deep inside the ORT loader and the
     generate call then returns nil. One shared normalization; the
     FileExists / DirectoryExists checks above keep the ORIGINAL Delphi
     backslash paths. }
+
   function Fwd(const S: string): string;
   begin
     Result := StringReplace(S, '\', '/', [rfReplaceAll]);
@@ -1436,8 +1423,7 @@ begin
 
   if FEngineKind <> tekUninitialized then
   begin
-    DoError('SetupPiperVoice called twice - create a new TYutaniPiperTTS ' +
-      'instance to change the voice.');
+    DoError('SetupPiperVoice called twice - create a new TYutaniPiperTTS ' + 'instance to change the voice.');
     Exit;
   end;
 
@@ -1462,8 +1448,7 @@ begin
   if (not FileExists(AModelPath)) or (not FileExists(ATokensPath)) then
   begin
     FEngineKind := tekSapi;
-    Reason := Format('Piper model file not found: %s / %s',
-      [AModelPath, ATokensPath]);
+    Reason := Format('Piper model file not found: %s / %s', [AModelPath, ATokensPath]);
     DoFallback(Reason);
     Exit;
   end;
@@ -1527,12 +1512,10 @@ begin
     SetCurrentDir(OldDir);
   end;
 
-
   if FTts = nil then
   begin
     FEngineKind := tekSapi;
-    Reason := 'SherpaOnnxCreateOfflineTts failed (check the model files / ' +
-      'onnxruntime DLL versions).';
+    Reason := 'SherpaOnnxCreateOfflineTts failed (check the model files / ' + 'onnxruntime DLL versions).';
     DoFallback(Reason);
     Exit;
   end;
@@ -1577,8 +1560,7 @@ begin
   GetMem(FSound, SoundSize);
   FillChar(FSound^, SoundSize, 0);
 
-  HR := ma_sound_init_from_data_source(FEngine, @FDataSource,
-    MA_SOUND_FLAG_NONE, nil { default group }, FSound);
+  HR := ma_sound_init_from_data_source(FEngine, @FDataSource, MA_SOUND_FLAG_NONE, nil { default group }, FSound);
   if HR <> MA_SUCCESS then
   begin
     DoError(Format('ma_sound_init_from_data_source failed: %d', [HR]));
@@ -1643,3 +1625,4 @@ begin
 end;
 
 end.
+

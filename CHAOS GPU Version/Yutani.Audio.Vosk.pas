@@ -45,9 +45,9 @@ const
   // Values for vosk_set_log_level (see vosk_api.h):
   //  -1 disables logging, 0 = errors (+words timing), 1 = debug info,
   //  -1000 = everything (very verbose).
-  VOSK_LOG_OFF   = -1;
+  VOSK_LOG_OFF = -1;
   VOSK_LOG_ERROR = 0;
-  VOSK_LOG_INFO  = 1;
+  VOSK_LOG_INFO = 1;
 
   // Default model format used by the Yutani avatar pipeline.
   VOSK_DEFAULT_SAMPLE_RATE = 16000;
@@ -55,10 +55,12 @@ const
 type
   // Opaque handles (we use Pointer exactly like MiniAudio4Delphi does)
   vosk_model = Pointer;
+
   vosk_recognizer = Pointer;
 
   // Event signatures. NOTE: fired from the audio/capture thread!
   TVoskTextEvent = procedure(Sender: TObject; const AText: string) of object;
+
   TVoskErrorEvent = procedure(Sender: TObject; const AMsg: string) of object;
 
   { Exception raised only for programming errors (wrong constructor usage).
@@ -70,39 +72,58 @@ type
       inactive (Available = False) instead of raising, so the avatar can run
       without speech input. }
   TYutaniVoskSTT = class(TObject)
-  private type
-    TVoskSetLogLevelProc = procedure(log_level: Integer); cdecl;
-    TVoskModelNewProc = function(model_path: PAnsiChar): vosk_model; cdecl;
-    TVoskModelFreeProc = procedure(model: vosk_model); cdecl;
-    TVoskRecognizerNewProc = function(model: vosk_model;
-      sample_rate: Single): vosk_recognizer; cdecl;
-    TVoskRecognizerFreeProc = procedure(recognizer: vosk_recognizer); cdecl;
-    TVoskRecognizerAcceptWaveformProc = function(recognizer: vosk_recognizer;
-      data: PAnsiChar; length: Integer): Integer; cdecl;
-    TVoskRecognizerPartialResultProc = function(
-      recognizer: vosk_recognizer): PAnsiChar; cdecl;
-    TVoskRecognizerResultProc = function(
-      recognizer: vosk_recognizer): PAnsiChar; cdecl;
-    TVoskRecognizerFinalResultProc = function(
-      recognizer: vosk_recognizer): PAnsiChar; cdecl;
-    TVoskRecognizerResetProc = procedure(recognizer: vosk_recognizer); cdecl;
+  private
+    type
+      TVoskSetLogLevelProc = procedure(log_level: Integer); cdecl;
+
+      TVoskModelNewProc = function(model_path: PAnsiChar): vosk_model; cdecl;
+
+      TVoskModelFreeProc = procedure(model: vosk_model); cdecl;
+
+      TVoskRecognizerNewProc = function(model: vosk_model; sample_rate: Single): vosk_recognizer; cdecl;
+
+      TVoskRecognizerFreeProc = procedure(recognizer: vosk_recognizer); cdecl;
+
+      TVoskRecognizerAcceptWaveformProc = function(recognizer: vosk_recognizer; data: PAnsiChar; length: Integer): Integer; cdecl;
+
+      TVoskRecognizerPartialResultProc = function(recognizer: vosk_recognizer): PAnsiChar; cdecl;
+
+      TVoskRecognizerResultProc = function(recognizer: vosk_recognizer): PAnsiChar; cdecl;
+
+      TVoskRecognizerFinalResultProc = function(recognizer: vosk_recognizer): PAnsiChar; cdecl;
+
+      TVoskRecognizerResetProc = procedure(recognizer: vosk_recognizer); cdecl;
   private
     // ---- class-level DLL management (shared by all instances) ----
-    class var FModule: THandle;
-    class var FModuleLoaded: Boolean;   // load attempted (success or not)
-    class var FModuleStatus: string;    // '' = ok, otherwise reason
-    class var FModuleLock: TRTLCriticalSection;
+    class var
+      FModule: THandle;
+    class var
+      FModuleLoaded: Boolean;   // load attempted (success or not)
+    class var
+      FModuleStatus: string;    // '' = ok, otherwise reason
+    class var
+      FModuleLock: TRTLCriticalSection;
 
-    class var _vosk_set_log_level: TVoskSetLogLevelProc;
-    class var _vosk_model_new: TVoskModelNewProc;
-    class var _vosk_model_free: TVoskModelFreeProc;
-    class var _vosk_recognizer_new: TVoskRecognizerNewProc;
-    class var _vosk_recognizer_free: TVoskRecognizerFreeProc;
-    class var _vosk_recognizer_accept_waveform: TVoskRecognizerAcceptWaveformProc;
-    class var _vosk_recognizer_partial_result: TVoskRecognizerPartialResultProc;
-    class var _vosk_recognizer_result: TVoskRecognizerResultProc;
-    class var _vosk_recognizer_final_result: TVoskRecognizerFinalResultProc;
-    class var _vosk_recognizer_reset: TVoskRecognizerResetProc;
+    class var
+      _vosk_set_log_level: TVoskSetLogLevelProc;
+    class var
+      _vosk_model_new: TVoskModelNewProc;
+    class var
+      _vosk_model_free: TVoskModelFreeProc;
+    class var
+      _vosk_recognizer_new: TVoskRecognizerNewProc;
+    class var
+      _vosk_recognizer_free: TVoskRecognizerFreeProc;
+    class var
+      _vosk_recognizer_accept_waveform: TVoskRecognizerAcceptWaveformProc;
+    class var
+      _vosk_recognizer_partial_result: TVoskRecognizerPartialResultProc;
+    class var
+      _vosk_recognizer_result: TVoskRecognizerResultProc;
+    class var
+      _vosk_recognizer_final_result: TVoskRecognizerFinalResultProc;
+    class var
+      _vosk_recognizer_reset: TVoskRecognizerResetProc;
 
     class constructor Create;
     class destructor Destroy;
@@ -140,9 +161,7 @@ type
     // ASampleRate: sample rate of the PCM data you will feed (default 16 kHz).
     // ALogLevel: VOSK_LOG_* constant, applied once while loading.
     // Does NOT raise when DLL/model are missing -> check Available.
-    constructor Create(const AModelPath: string;
-      ASampleRate: Integer = VOSK_DEFAULT_SAMPLE_RATE;
-      ALogLevel: Integer = VOSK_LOG_ERROR); reintroduce;
+    constructor Create(const AModelPath: string; ASampleRate: Integer = VOSK_DEFAULT_SAMPLE_RATE; ALogLevel: Integer = VOSK_LOG_ERROR); reintroduce;
     destructor Destroy; override;
 
     { Main feed - call directly from the MiniAudio capture callback.
@@ -261,8 +280,7 @@ begin
     // Search order: application directory, then the 'vosk\' subfolder.
     // SetDllDirectoryW also lets Windows resolve the MinGW runtime DLLs
     // (libwinpthread-1.dll etc.) that libvosk.dll depends on.
-    SetDllDirectoryW(PChar(IncludeTrailingPathDelimiter(
-      ExtractFilePath(ParamStr(0)) + 'vosk')));
+    SetDllDirectoryW(PChar(IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0)) + 'vosk')));
     try
       FModule := LoadLibrary(VOSK_LIB);
     finally
@@ -270,8 +288,7 @@ begin
     end;
     if FModule = 0 then
     begin
-      FModuleStatus := Format('%s not found (Win32 error %d) - searched ' +
-        'the EXE folder and the vosk\ subfolder', [VOSK_LIB, GetLastError]);
+      FModuleStatus := Format('%s not found (Win32 error %d) - searched ' + 'the EXE folder and the vosk\ subfolder', [VOSK_LIB, GetLastError]);
       FModuleLoaded := True;
       Exit;
     end;
@@ -341,8 +358,7 @@ end;
 // TYutaniVoskSTT
 // =============================================================================
 
-constructor TYutaniVoskSTT.Create(const AModelPath: string;
-  ASampleRate: Integer; ALogLevel: Integer);
+constructor TYutaniVoskSTT.Create(const AModelPath: string; ASampleRate: Integer; ALogLevel: Integer);
 begin
   inherited Create;
   InitializeCriticalSection(FLock);
@@ -367,8 +383,7 @@ begin
   FModel := _vosk_model_new(PAnsiChar(AnsiString(AModelPath)));
   if FModel = nil then
   begin
-    SetInactive(Format('vosk_model_new failed for "%s" (incompatible or ' +
-      'corrupt model?)', [AModelPath]));
+    SetInactive(Format('vosk_model_new failed for "%s" (incompatible or ' + 'corrupt model?)', [AModelPath]));
     Exit;
   end;
 
@@ -446,8 +461,7 @@ begin
     if (FRecognizer = nil) or (not Assigned(_vosk_recognizer_accept_waveform)) then
       Exit;
 
-    Res := _vosk_recognizer_accept_waveform(FRecognizer, PAnsiChar(Data),
-      ByteCount);
+    Res := _vosk_recognizer_accept_waveform(FRecognizer, PAnsiChar(Data), ByteCount);
     if Res < 0 then
     begin
       // Exception inside Vosk: recover by resetting the recognizer.
@@ -455,8 +469,7 @@ begin
         _vosk_recognizer_reset(FRecognizer);
       LeaveCriticalSection(FLock);
       try
-        DoError('vosk_recognizer_accept_waveform failed (' +
-          IntToStr(Res) + ') - recognizer reset');
+        DoError('vosk_recognizer_accept_waveform failed (' + IntToStr(Res) + ') - recognizer reset');
       finally
         EnterCriticalSection(FLock);
       end;
@@ -511,8 +524,7 @@ begin
   end;
 end;
 
-procedure TYutaniVoskSTT.ParseAndFire(const AJsonPtr: PAnsiChar;
-  IsFinal: Boolean);
+procedure TYutaniVoskSTT.ParseAndFire(const AJsonPtr: PAnsiChar; IsFinal: Boolean);
 var
   Json: TJSONValue;
   Txt: string;
@@ -591,3 +603,4 @@ begin
 end;
 
 end.
+
