@@ -52,6 +52,9 @@ v0.4:  https://youtu.be/sGEjN7L1UJA
       
 *C.H.A.O.S. running on an ASUS ZenScreen OLED at 1% brightness (drawing just 2–3 watts)     
 — one-click **Send to Monitor** coming in the next update ;)*     
+*(or maybe it's already hiding in here right on my 1-year GitHub anniversary...      
+and maybe even a little more than just Send to Monitor :D)*       
+      
             
 ## 🚧 Work in Progress / Roadmap    
      
